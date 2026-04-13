@@ -1,0 +1,210 @@
+@import "tailwindcss";
+
+/**
+ * Design tokens — defined in @theme so Tailwind utilities like `bg-amber`,
+ * `text-ink`, `border-border` etc. are generated automatically.
+ *
+ * Colour naming convention:
+ *   ink        — near-black (#0F0E0C); used for body text and dark backgrounds
+ *   parchment  — warm off-white (#F7F4EE); section backgrounds, subtle contrast
+ *   cream      — near-pure white (#FFFDF8); card and page background
+ *   amber      — brand primary (#C8852A); CTAs, highlights, brand accents
+ *   sage       — success / action green (#3A6B4E); positive states, share actions
+ *   danger     — alert red (#B03A2E); red flag detection rows
+ *   muted      — warm grey (#7A7569); secondary / helper text
+ *   border     — warm grey (#E2DDD3); dividers and card outlines
+ */
+@theme {
+  /* Fonts — variables injected by next/font in layout.tsx */
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-instrument-serif), Georgia, serif;
+
+  /* Brand colours */
+  --color-ink: #0F0E0C;
+  --color-parchment: #F7F4EE;
+  --color-cream: #FFFDF8;
+  --color-amber: #C8852A;
+  --color-amber-light: #F5E6CC;
+  --color-amber-dark: #8A5A15;
+  --color-sage: #3A6B4E;
+  --color-sage-light: #E4EDE7;
+  --color-sage-dark: #1F3D2B;
+  --color-danger: #B03A2E;
+  --color-danger-light: #F5E0DE;
+  --color-muted: #7A7569;
+  --color-border: #E2DDD3;
+
+  /* Named animation aliases consumed via `animate-*` Tailwind utilities */
+  --animate-fade-up: fadeUp 0.6s ease forwards;
+  --animate-fade-in: fadeIn 0.5s ease forwards;
+  --animate-pulse-slow: pulse 3s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+}
+
+/* ── Keyframes ──────────────────────────────────────────────────────────── */
+
+@keyframes fadeUp {
+  0%   { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Used by processing dots and shimmer placeholders */
+@keyframes shimmer {
+  0%   { opacity: 0.6; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
+
+*   { box-sizing: border-box; }
+
+/* smooth-scroll enables anchor navigation (e.g. #upload, #features) */
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: #FFFDF8;
+  color: #0F0E0C;
+  font-family: var(--font-sans);
+  /* Improve font rendering on macOS / iOS */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Grain overlay ──────────────────────────────────────────────────────── */
+/*
+ * Adds a subtle paper-grain texture over the entire page using an inline SVG
+ * feTurbulence filter. pointer-events:none ensures it doesn't block clicks.
+ * z-index:9999 stacks it above all content (opacity 0.4 keeps it barely visible).
+ * This gives the UI a premium, print-like quality without a raster image asset.
+ */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.4;
+}
+
+/* ── Typography helpers ─────────────────────────────────────────────────── */
+
+/* Tailwind's `font-serif` applies the serif family but not italic.
+   This utility adds both at once for the editorial italic style in headings. */
+.font-serif-italic {
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+
+/* ── Upload zone ────────────────────────────────────────────────────────── */
+/*
+ * Three visual states driven by the `state` value in UploadZone.tsx:
+ *   default   → dashed neutral border
+ *   drag-over → amber border + warm tint (file is hovering)
+ *   dropped   → sage border + green tint (file accepted / processing)
+ */
+.upload-zone {
+  border: 1.5px dashed #C8C3B8;
+  transition: border-color 0.2s, background 0.2s;
+}
+.upload-zone:hover,
+.upload-zone.drag-over {
+  border-color: #C8852A;
+  background: #FDF8F0;
+}
+.upload-zone.dropped {
+  border-color: #3A6B4E;
+  background: #F0F5F1;
+}
+
+/* ── Nav underline hover ────────────────────────────────────────────────── */
+/*
+ * Animated amber underline grows from left on hover using a ::after
+ * pseudo-element. width transitions from 0 → 100% on hover.
+ */
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: #C8852A;
+  transition: width 0.2s;
+}
+.nav-link:hover::after {
+  width: 100%;
+}
+
+/* ── Doc type pills ─────────────────────────────────────────────────────── */
+/* Subtle hover to amber keeps the pill group visually linked to the brand. */
+.doc-type-pill:hover {
+  background: #F0EAE0;
+  border-color: #C8852A;
+  color: #8A5A15;
+}
+
+/* ── Card accent rows ───────────────────────────────────────────────────── */
+/*
+ * Used in BriefCardPreview for the red flag and action rows.
+ * Left border (3px solid) + tinted background create semantic colour coding:
+ *   red   → risk / warning
+ *   green → recommended actions
+ */
+.red-flag-row {
+  background: #FDF0EE;
+  border-left: 3px solid #B03A2E;
+}
+.action-row {
+  background: #EEF5F1;
+  border-left: 3px solid #3A6B4E;
+}
+
+/* ── Scroll reveal ──────────────────────────────────────────────────────── */
+/*
+ * Initial state: hidden and shifted down 16px.
+ * The `visible` class is added by ScrollReveal.tsx via IntersectionObserver
+ * once the element enters the viewport.
+ * Transition duration matches the Hero fadeUp animation (0.6s) for consistency.
+ */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.scroll-reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Hero animate-in helpers ────────────────────────────────────────────── */
+/*
+ * Staggered cascade for Hero left-column elements.
+ * Each class sets opacity:0 immediately (prevents FOUC before JS) and
+ * delays the `animate-fade-up` animation by N × 0.1s.
+ * Elements with no animation class remain visible by default — these helpers
+ * must only be used alongside `animate-fade-up`.
+ */
+.anim-delay-1 { animation-delay: 0.1s; opacity: 0; }
+.anim-delay-2 { animation-delay: 0.2s; opacity: 0; }
+.anim-delay-3 { animation-delay: 0.3s; opacity: 0; }
+.anim-delay-4 { animation-delay: 0.4s; opacity: 0; }
+.anim-delay-5 { animation-delay: 0.5s; opacity: 0; }
+
+/* ── Processing dots ────────────────────────────────────────────────────── */
+/*
+ * The three dots in UploadZone's processing state use staggered shimmer
+ * (opacity pulse) to suggest activity. nth-child delays create the wave effect.
+ */
+.processing-dot { animation: shimmer 1.4s ease-in-out infinite; }
+.processing-dot:nth-child(2) { animation-delay: 0.2s; }
+.processing-dot:nth-child(3) { animation-delay: 0.4s; }
