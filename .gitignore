@@ -1,0 +1,67 @@
+############################
+# OS
+############################
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+############################
+# Node (applies to both backend + frontend)
+############################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.node_history
+
+############################
+# Environment variables
+############################
+.env
+.env.*
+!.env.example
+
+############################
+# Backend (Fastify / Node)
+############################
+backend/dist/
+backend/build/
+backend/.cache/
+backend/.tmp/
+backend/coverage/
+
+############################
+# Frontend (Next.js)
+############################
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.turbo/
+frontend/coverage/
+
+############################
+# TypeScript
+############################
+*.tsbuildinfo
+
+############################
+# Logs
+############################
+logs/
+*.log
+*.pid
+
+############################
+# IDE
+############################
+.vscode/
+.idea/
+nbproject/
+
+############################
+# Misc
+############################
+.eslintcache
