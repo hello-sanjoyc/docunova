@@ -64,7 +64,7 @@
 
 *   { box-sizing: border-box; }
 
-/* smooth-scroll enables anchor navigation (e.g. #upload, #features) */
+/* smooth-scroll enables anchor navigation (e.g. #upload_zone, #features) */
 html { scroll-behavior: smooth; }
 
 body {

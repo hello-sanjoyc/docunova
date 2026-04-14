@@ -21,123 +21,125 @@ import { useRef, useState } from "react";
 type UploadState = "idle" | "dragover" | "processing";
 
 export default function UploadZone() {
-  const [state, setState] = useState<UploadState>("idle");
+    const [state, setState] = useState<UploadState>("idle");
 
-  // Hidden <input> triggered programmatically so the whole zone is clickable,
-  // not just a small file button.
-  const inputRef = useRef<HTMLInputElement>(null);
+    // Hidden <input> triggered programmatically so the whole zone is clickable,
+    // not just a small file button.
+    const inputRef = useRef<HTMLInputElement>(null);
 
-  function handleDragOver(e: React.DragEvent) {
-    // Prevent browser default (open file) and signal we accept the drop.
-    e.preventDefault();
-    setState("dragover");
-  }
-
-  function handleDragLeave() {
-    setState("idle");
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    // TODO: read e.dataTransfer.files[0], validate MIME type / size,
-    // then trigger the upload. For now we just show the processing state.
-    setState("processing");
-  }
-
-  function handleClick() {
-    inputRef.current?.click();
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files && e.target.files.length > 0) {
-      // TODO: same as handleDrop — pass the file to the upload handler.
-      setState("processing");
+    function handleDragOver(e: React.DragEvent) {
+        // Prevent browser default (open file) and signal we accept the drop.
+        e.preventDefault();
+        setState("dragover");
     }
-  }
 
-  // Derive CSS class from state so the stylesheet owns the visual states
-  // (see .upload-zone, .drag-over, .dropped in globals.css).
-  const zoneClass =
-    state === "dragover"
-      ? "upload-zone drag-over"
-      : state === "processing"
-        ? "upload-zone dropped"
-        : "upload-zone";
+    function handleDragLeave() {
+        setState("idle");
+    }
 
-  // Processing view: animated dots while the AI runs.
-  // Swap this out for a real progress indicator once the upload API exists.
-  if (state === "processing") {
+    function handleDrop(e: React.DragEvent) {
+        e.preventDefault();
+        // TODO: read e.dataTransfer.files[0], validate MIME type / size,
+        // then trigger the upload. For now we just show the processing state.
+        setState("processing");
+    }
+
+    function handleClick() {
+        inputRef.current?.click();
+    }
+
+    function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+        if (e.target.files && e.target.files.length > 0) {
+            // TODO: same as handleDrop — pass the file to the upload handler.
+            setState("processing");
+        }
+    }
+
+    // Derive CSS class from state so the stylesheet owns the visual states
+    // (see .upload-zone, .drag-over, .dropped in globals.css).
+    const zoneClass =
+        state === "dragover"
+            ? "upload-zone drag-over"
+            : state === "processing"
+              ? "upload-zone dropped"
+              : "upload-zone";
+
+    // Processing view: animated dots while the AI runs.
+    // Swap this out for a real progress indicator once the upload API exists.
+    if (state === "processing") {
+        return (
+            <div
+                id="upload_zone"
+                className={`${zoneClass} rounded-2xl p-8 text-center`}
+            >
+                <div className="flex items-center justify-center gap-3 py-2">
+                    {/* Staggered shimmer via nth-child delay in globals.css */}
+                    <div className="flex gap-1">
+                        <span className="processing-dot w-2 h-2 rounded-full bg-sage inline-block" />
+                        <span className="processing-dot w-2 h-2 rounded-full bg-sage inline-block" />
+                        <span className="processing-dot w-2 h-2 rounded-full bg-sage inline-block" />
+                    </div>
+                    <span className="text-sage text-sm font-medium">
+                        Processing your document…
+                    </span>
+                </div>
+            </div>
+        );
+    }
+
     return (
-      <div
-        id="upload"
-        className={`${zoneClass} rounded-2xl p-8 text-center`}
-      >
-        <div className="flex items-center justify-center gap-3 py-2">
-          {/* Staggered shimmer via nth-child delay in globals.css */}
-          <div className="flex gap-1">
-            <span className="processing-dot w-2 h-2 rounded-full bg-sage inline-block" />
-            <span className="processing-dot w-2 h-2 rounded-full bg-sage inline-block" />
-            <span className="processing-dot w-2 h-2 rounded-full bg-sage inline-block" />
-          </div>
-          <span className="text-sage text-sm font-medium">
-            Processing your document…
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      id="upload"
-      className={`${zoneClass} rounded-2xl p-8 text-center cursor-pointer`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      onClick={handleClick}
-      // The outer div is the interactive element; the inner <button> is visual only.
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && handleClick()}
-      aria-label="Upload contract document"
-    >
-      {/* Accepts only text-based PDFs and DOCX; scanned/image PDFs are rejected
-          by the API since OCR is not supported — see FAQ for user-facing copy. */}
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".pdf,.docx"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-      <div className="w-12 h-12 bg-amber-light rounded-xl flex items-center justify-center mx-auto mb-4">
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#C8852A"
-          strokeWidth="1.5"
+        <div
+            id="upload_zone"
+            className={`${zoneClass} rounded-2xl p-8 text-center cursor-pointer`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={handleClick}
+            // The outer div is the interactive element; the inner <button> is visual only.
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && handleClick()}
+            aria-label="Upload contract document"
         >
-          <path
-            d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </div>
-      <p className="font-medium text-ink mb-1">Drop your contract here</p>
-      <p className="text-sm text-muted mb-4">PDF or DOCX — up to 50 pages</p>
-      {/* tabIndex={-1}: keyboard navigation is handled by the outer div.
+            {/* Accepts only text-based PDFs and DOCX; scanned/image PDFs are rejected
+          by the API since OCR is not supported — see FAQ for user-facing copy. */}
+            <input
+                ref={inputRef}
+                type="file"
+                accept=".pdf,.docx"
+                className="hidden"
+                onChange={handleFileChange}
+            />
+            <div className="w-12 h-12 bg-amber-light rounded-xl flex items-center justify-center mx-auto mb-4">
+                <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#C8852A"
+                    strokeWidth="1.5"
+                >
+                    <path
+                        d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+            </div>
+            <p className="font-medium text-ink mb-1">Drop your contract here</p>
+            <p className="text-sm text-muted mb-4">
+                PDF or DOCX — up to 50 pages
+            </p>
+            {/* tabIndex={-1}: keyboard navigation is handled by the outer div.
           pointer-events-none: prevents a double-click event from firing
           when the user clicks the button area on the outer div. */}
-      <button
-        type="button"
-        className="bg-ink text-cream text-sm px-6 py-2.5 rounded-full hover:bg-amber transition-colors font-medium pointer-events-none"
-        tabIndex={-1}
-      >
-        Choose file
-      </button>
-    </div>
-  );
+            <button
+                type="button"
+                className="bg-ink text-cream text-sm px-6 py-2.5 rounded-full hover:bg-amber transition-colors font-medium pointer-events-none"
+                tabIndex={-1}
+            >
+                Choose file
+            </button>
+        </div>
+    );
 }

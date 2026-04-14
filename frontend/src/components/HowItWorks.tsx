@@ -54,14 +54,14 @@ const STEPS = [
         // with a map-reduce summarisation strategy (see FAQ for user copy).
         description:
             "Claude extracts text, chunks long docs, and identifies all 8 key fields",
-        color: "bg-sage-light",
+        color: "bg-danger-light",
         icon: (
             <svg
                 width="20"
                 height="20"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#3A6B4E"
+                stroke="#B03A2E"
                 strokeWidth="1.5"
             >
                 <circle cx="12" cy="12" r="3" />
@@ -98,14 +98,14 @@ const STEPS = [
         // Shareable links are read-only and do not require the recipient to sign up.
         description:
             "Export as PDF or send a read-only link — no login required for recipients",
-        color: "bg-parchment border border-border",
+        color: "bg-sage-light",
         icon: (
             <svg
                 width="20"
                 height="20"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#7A7569"
+                stroke="#3A6B4E"
                 strokeWidth="1.5"
             >
                 <circle cx="18" cy="5" r="3" />

@@ -15,6 +15,7 @@
  * page doesn't need to add any animation wrappers.
  */
 
+import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import StatsBar from "@/components/StatsBar";
@@ -25,22 +26,54 @@ import Pricing from "@/components/Pricing";
 import FAQ from "@/components/FAQ";
 import FinalCTA from "@/components/FinalCTA";
 import Footer from "@/components/Footer";
+import MoveToUpButton from "@/components/MoveToUpButton";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
+
+export const metadata: Metadata = {
+    title: `${SITE_NAME} | Understand any contract in 60 seconds`,
+    description: SITE_DESCRIPTION,
+    alternates: {
+        canonical: "/",
+    },
+};
+
+const organizationSchema = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: SITE_NAME,
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Web",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+    },
+};
 
 export default function Home() {
-  return (
-    <>
-      <Navbar />
-      <main>
-        <Hero />
-        <StatsBar />
-        <HowItWorks />
-        <Features />
-        <SocialProof />
-        <Pricing />
-        <FAQ />
-        <FinalCTA />
-      </main>
-      <Footer />
-    </>
-  );
+    return (
+        <>
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{
+                    __html: JSON.stringify(organizationSchema),
+                }}
+            />
+            <Navbar />
+            <main>
+                <Hero />
+                <StatsBar />
+                <HowItWorks />
+                <Features />
+                <SocialProof />
+                <Pricing />
+                <FAQ />
+                <FinalCTA />
+            </main>
+            <Footer />
+            <MoveToUpButton />
+        </>
+    );
 }

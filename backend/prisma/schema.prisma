@@ -1,12 +1,126 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum Plan {
+  FREE
+  PRO
+  TEAM
+}
+
+enum DocumentStatus {
+  PROCESSING
+  READY
+  ERROR
+}
+
+enum TeamRole {
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  fullName      String
+  companyName   String?
+  passwordHash  String
+  plan          Plan           @default(FREE)
+  googleId      String?        @unique
+  emailVerified Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  documents     Document[]
+  teamMembers   TeamMember[]
+  refreshTokens RefreshToken[]
+}
+
+model Document {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filename     String
+  originalName String
+  mimeType     String
+  fileSize     Int
+  filePath     String
+  status       DocumentStatus @default(PROCESSING)
+  pageCount    Int?
+  processingMs Int?
+  errorMessage String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  brief      Brief?
+  shareLinks ShareLink[]
+}
+
+model Brief {
+  id                 String     @id @default(cuid())
+  documentId         String     @unique
+  document           Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  parties            String?
+  effectiveDate      String?
+  obligations        String?
+  payment            String?
+  penalties          String?
+  renewalTerms       String?
+  redFlags           String[]
+  recommendedActions String[]
+  createdAt          DateTime   @default(now())
+
+  questions Question[]
+}
+
+model Question {
+  id        String   @id @default(cuid())
+  briefId   String
+  brief     Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String
+  createdAt DateTime @default(now())
+}
+
+model ShareLink {
+  id         String    @id @default(cuid())
+  documentId String
+  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  token      String    @unique @default(cuid())
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model Team {
+  id        String       @id @default(cuid())
+  name      String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  members TeamMember[]
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      TeamRole @default(MEMBER)
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }

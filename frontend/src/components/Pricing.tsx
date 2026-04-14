@@ -163,7 +163,7 @@ export default function Pricing() {
 
             {/* TODO: href → Stripe checkout for Pro plan */}
             <a
-              href="#"
+              href="/signup"
               className="block text-center text-[14px] font-medium bg-ink text-cream rounded-full py-2.5 hover:bg-amber transition-colors"
             >
               Start 7-day trial
@@ -207,7 +207,7 @@ export default function Pricing() {
 
             {/* TODO: href → Stripe checkout for Team plan */}
             <a
-              href="#"
+              href="/signup"
               className="block text-center text-[14px] font-medium border border-border rounded-full py-2.5 hover:border-amber hover:text-amber transition-colors"
             >
               Start 7-day trial
