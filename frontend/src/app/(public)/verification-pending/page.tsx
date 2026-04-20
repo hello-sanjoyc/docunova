@@ -2,8 +2,17 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 
 export default function VerificationPendingPage() {
+  return (
+    <Suspense fallback={null}>
+      <VerificationPendingPageContent />
+    </Suspense>
+  );
+}
+
+function VerificationPendingPageContent() {
   const params = useSearchParams();
   const email = params.get('email');
 

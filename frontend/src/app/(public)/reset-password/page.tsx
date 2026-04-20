@@ -2,12 +2,20 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import { resetPassword } from '@/lib/api/auth';
 import { formatApiError } from '@/lib/api/errors';
 
 export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordPageContent />
+    </Suspense>
+  );
+}
+
+function ResetPasswordPageContent() {
   const params = useSearchParams();
   const token = useMemo(() => params.get('token') ?? '', [params]);
   const [password, setPassword] = useState('');

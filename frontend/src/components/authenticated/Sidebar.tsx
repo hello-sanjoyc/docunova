@@ -152,8 +152,7 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
 
             <nav className="mt-2 px-2 py-5 space-y-1 flex-1 overflow-y-auto">
                 {navItems.map((item) => {
-                    const isActive =
-                        item.href !== "#" && pathname.startsWith(item.href);
+                    const isActive = pathname.startsWith(item.href);
                     return (
                         <Link
                             key={item.label}

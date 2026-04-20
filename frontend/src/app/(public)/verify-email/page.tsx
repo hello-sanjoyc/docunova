@@ -2,12 +2,20 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import { verifyEmail } from '@/lib/api/auth';
 import { formatApiError } from '@/lib/api/errors';
 
 export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={null}>
+      <VerifyEmailPageContent />
+    </Suspense>
+  );
+}
+
+function VerifyEmailPageContent() {
   const params = useSearchParams();
   const token = useMemo(() => params.get('token') ?? '', [params]);
   const [loading, setLoading] = useState(false);

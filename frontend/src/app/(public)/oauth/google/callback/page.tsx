@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { clearAuthSession, setAuthSession } from '@/lib/api/session';
 
 function safeTargetPath(target: string | null): string {
@@ -12,6 +12,14 @@ function safeTargetPath(target: string | null): string {
 }
 
 export default function GoogleOAuthCallbackPage() {
+  return (
+    <Suspense fallback={null}>
+      <GoogleOAuthCallbackPageContent />
+    </Suspense>
+  );
+}
+
+function GoogleOAuthCallbackPageContent() {
   const router = useRouter();
   const params = useSearchParams();
 
