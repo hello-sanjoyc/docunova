@@ -2,14 +2,13 @@
  * Root layout — applies to every route in the app.
  *
  * Fonts:
- *   Instrument Serif — editorial serif used for headlines and italic accents.
- *     Loaded in both normal and italic styles so `font-serif-italic` works
- *     without a synthetic oblique.
+ *   Montserrat — used for display typography mapped to the app's `font-serif`
+ *     utility for backward compatibility with existing class names.
  *   DM Sans — clean geometric sans for UI copy; weights 300/400/500/600 cover
  *     light body text through medium labels.
  *
  * Both fonts inject their CSS custom properties via the `variable` option,
- * which makes them available as `--font-instrument-serif` and `--font-dm-sans`
+ * which makes them available as `--font-montserrat` and `--font-dm-sans`
  * in the @theme block in globals.css.
  *
  * `display: "swap"` prevents FOIT (flash of invisible text) — the browser
@@ -20,7 +19,7 @@
  */
 
 import type { Metadata } from "next";
-import { Instrument_Serif, DM_Sans } from "next/font/google";
+import { DM_Sans, Montserrat } from "next/font/google";
 import "./globals.css";
 import {
     SITE_DESCRIPTION,
@@ -28,12 +27,12 @@ import {
     SITE_NAME,
     SITE_URL,
 } from "@/lib/seo";
+import ToastProvider from "@/components/ToastProvider";
 
-const instrumentSerif = Instrument_Serif({
-    weight: ["400"],
-    style: ["normal", "italic"],
+const montserrat = Montserrat({
+    weight: ["400", "500", "600", "700"],
     subsets: ["latin"],
-    variable: "--font-instrument-serif",
+    variable: "--font-montserrat",
     display: "swap",
 });
 
@@ -106,9 +105,12 @@ export default function RootLayout({
             lang="en"
             // Font CSS variables must be on <html> so they cascade into <body>
             // and any portals/modals that mount outside the component tree.
-            className={`${instrumentSerif.variable} ${dmSans.variable}`}
+            className={`${montserrat.variable} ${dmSans.variable}`}
         >
-            <body>{children}</body>
+            <body>
+                {children}
+                <ToastProvider />
+            </body>
         </html>
     );
 }

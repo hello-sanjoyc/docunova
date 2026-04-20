@@ -1,126 +1,507 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "library"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-enum Plan {
-  FREE
-  PRO
-  TEAM
+enum UserStatus {
+  ACTIVE    @map("active")
+  INVITED   @map("invited")
+  SUSPENDED @map("suspended")
+  DELETED   @map("deleted")
+
+  @@map("user_status")
+}
+
+enum AuthProvider {
+  LOCAL     @map("local")
+  GOOGLE    @map("google")
+  MICROSOFT @map("microsoft")
+  GITHUB    @map("github")
+
+  @@map("auth_provider")
+}
+
+enum SessionStatus {
+  ACTIVE  @map("active")
+  REVOKED @map("revoked")
+  EXPIRED @map("expired")
+
+  @@map("session_status")
 }
 
 enum DocumentStatus {
-  PROCESSING
-  READY
-  ERROR
+  UPLOADED   @map("uploaded")
+  PROCESSING @map("processing")
+  READY      @map("ready")
+  FAILED     @map("failed")
+  ARCHIVED   @map("archived")
+  TRASHED    @map("trashed")
+
+  @@map("document_status")
 }
 
-enum TeamRole {
-  ADMIN
-  MEMBER
+enum AiJobType {
+  OCR          @map("ocr")
+  CLASSIFY     @map("classify")
+  EXTRACT      @map("extract")
+  SUMMARIZE    @map("summarize")
+  FULL_PROCESS @map("full_process")
+
+  @@map("ai_job_type")
+}
+
+enum AiJobStatus {
+  QUEUED    @map("queued")
+  RUNNING   @map("running")
+  COMPLETED @map("completed")
+  FAILED    @map("failed")
+  CANCELLED @map("cancelled")
+
+  @@map("ai_job_status")
+}
+
+enum MemberStatus {
+  INVITED  @map("invited")
+  ACTIVE   @map("active")
+  DISABLED @map("disabled")
+  REMOVED  @map("removed")
+
+  @@map("member_status")
+}
+
+enum OrganizationInvitationStatus {
+  PENDING  @map("pending")
+  ACCEPTED @map("accepted")
+  REVOKED  @map("revoked")
+  EXPIRED  @map("expired")
+
+  @@map("organization_invitation_status")
+}
+
+model Organization {
+  id              BigInt   @id @default(autoincrement()) @db.BigInt
+  uuid            String   @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String   @db.VarChar(255)
+  slug            String   @unique @db.VarChar(150)
+  logoUrl         String?  @map("logo_url")
+  website         String?
+  timezone        String   @default("UTC") @db.VarChar(100)
+  languageCode    String   @default("en") @map("language_code") @db.VarChar(10)
+  planCode        String?  @map("plan_code") @db.VarChar(50)
+  billingEmail    String?  @map("billing_email") @db.VarChar(255)
+  maxStorageBytes BigInt   @default(0) @map("max_storage_bytes") @db.BigInt
+  maxUsers        Int      @default(0) @map("max_users")
+  settingsJson    Json     @default("{}") @map("settings_json")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  users                   User[]
+  roles                   Role[]
+  organizationMembers     OrganizationMember[]
+  organizationInvitations OrganizationInvitation[]
+  folders                 Folder[]
+  documents               Document[]
+  aiJobs                  AiJob[]
+  searchHistory           SearchHistory[]
+
+  @@map("organizations")
 }
 
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  fullName      String
-  companyName   String?
-  passwordHash  String
-  plan          Plan           @default(FREE)
-  googleId      String?        @unique
-  emailVerified Boolean        @default(false)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id               BigInt       @id @default(autoincrement()) @db.BigInt
+  uuid             String       @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   BigInt       @map("organization_id") @db.BigInt
+  email            String       @db.VarChar(255)
+  passwordHash     String?      @map("password_hash")
+  authProvider     AuthProvider @default(LOCAL) @map("auth_provider")
+  providerUserId   String?      @map("provider_user_id") @db.VarChar(255)
+  firstName        String?      @map("first_name") @db.VarChar(120)
+  lastName         String?      @map("last_name") @db.VarChar(120)
+  fullName         String?      @map("full_name") @db.VarChar(255)
+  phone            String?      @db.VarChar(30)
+  avatarUrl        String?      @map("avatar_url")
+  emailVerifiedAt  DateTime?    @map("email_verified_at") @db.Timestamptz(6)
+  twoFactorEnabled Boolean      @default(false) @map("two_factor_enabled")
+  twoFactorSecret  String?      @map("two_factor_secret")
+  status           UserStatus   @default(ACTIVE)
+  lastLoginAt      DateTime?    @map("last_login_at") @db.Timestamptz(6)
+  lastActivityAt   DateTime?    @map("last_activity_at") @db.Timestamptz(6)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?    @map("deleted_at") @db.Timestamptz(6)
 
+  organization                    Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organizationMembers             OrganizationMember[]     @relation("OrganizationMemberUser")
+  invitedOrganizationMembers      OrganizationMember[]     @relation("OrganizationMemberInvitedBy")
+  sentOrganizationInvitations     OrganizationInvitation[] @relation("OrganizationInvitationInvitedBy")
+  acceptedOrganizationInvitations OrganizationInvitation[] @relation("OrganizationInvitationAcceptedBy")
+  userSessions                    UserSession[]
+  passwordResetTokens             PasswordResetToken[]
+  emailVerificationTokens         EmailVerificationToken[]
+  createdFolders                  Folder[]                 @relation("FolderCreatedBy")
+  deletedFolders                  Folder[]                 @relation("FolderDeletedBy")
+  ownedDocuments                  Document[]               @relation("DocumentOwner")
+  deletedDocuments                Document[]               @relation("DocumentDeletedBy")
+  documentVersionsCreated         DocumentVersion[]
+  documentAccessHistory           DocumentAccessHistory[]
+  aiJobsTriggered                 AiJob[]
+  searchHistory                   SearchHistory[]
+
+  @@unique([organizationId, email], map: "uq_users_org_email")
+  @@index([organizationId, email], map: "idx_users_org_email")
+  @@index([status], map: "idx_users_status")
+  @@index([deletedAt], map: "idx_users_deleted_at")
+  @@map("users")
+}
+
+model Role {
+  id             BigInt   @id @default(autoincrement()) @db.BigInt
+  uuid           String   @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId BigInt   @map("organization_id") @db.BigInt
+  name           String   @db.VarChar(100)
+  code           String   @db.VarChar(100)
+  isSystem       Boolean  @default(false) @map("is_system")
+  description    String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationMembers OrganizationMember[]
+
+  @@unique([organizationId, code], map: "uq_roles_org_code")
+  @@unique([organizationId, name], map: "uq_roles_org_name")
+  @@index([organizationId], map: "idx_roles_org")
+  @@map("roles")
+}
+
+model OrganizationMember {
+  id             BigInt       @id @default(autoincrement()) @db.BigInt
+  uuid           String       @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId BigInt       @map("organization_id") @db.BigInt
+  userId         BigInt       @map("user_id") @db.BigInt
+  roleId         BigInt?      @map("role_id") @db.BigInt
+  title          String?      @db.VarChar(150)
+  status         MemberStatus @default(ACTIVE)
+  invitedBy      BigInt?      @map("invited_by") @db.BigInt
+  invitedAt      DateTime?    @map("invited_at") @db.Timestamptz(6)
+  joinedAt       DateTime?    @map("joined_at") @db.Timestamptz(6)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user          User         @relation("OrganizationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  role          Role?        @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  invitedByUser User?        @relation("OrganizationMemberInvitedBy", fields: [invitedBy], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, userId], map: "uq_org_member")
+  @@index([organizationId], map: "idx_org_members_org")
+  @@index([userId], map: "idx_org_members_user")
+  @@index([roleId], map: "idx_org_members_role")
+  @@map("organization_members")
+}
+
+model OrganizationInvitation {
+  id             BigInt                       @id @default(autoincrement()) @db.BigInt
+  uuid           String                       @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId BigInt                       @map("organization_id") @db.BigInt
+  email          String                       @db.VarChar(255)
+  roleCode       String?                      @map("role_code") @db.VarChar(100)
+  tokenHash      String                       @map("token_hash")
+  status         OrganizationInvitationStatus @default(PENDING)
+  invitedBy      BigInt?                      @map("invited_by") @db.BigInt
+  acceptedBy     BigInt?                      @map("accepted_by") @db.BigInt
+  expiresAt      DateTime                     @map("expires_at") @db.Timestamptz(6)
+  acceptedAt     DateTime?                    @map("accepted_at") @db.Timestamptz(6)
+  revokedAt      DateTime?                    @map("revoked_at") @db.Timestamptz(6)
+  createdAt      DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                     @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedByUser  User?        @relation("OrganizationInvitationInvitedBy", fields: [invitedBy], references: [id], onDelete: SetNull)
+  acceptedByUser User?        @relation("OrganizationInvitationAcceptedBy", fields: [acceptedBy], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status], map: "idx_org_invitations_org_status")
+  @@index([organizationId, email], map: "idx_org_invitations_org_email")
+  @@index([tokenHash], map: "idx_org_invitations_token")
+  @@map("organization_invitations")
+}
+
+model UserSession {
+  id               BigInt               @id @default(autoincrement()) @db.BigInt
+  uuid             String               @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           BigInt               @map("user_id") @db.BigInt
+  refreshTokenHash String               @map("refresh_token_hash")
+  deviceName       String?              @map("device_name") @db.VarChar(255)
+  deviceType       String?              @map("device_type") @db.VarChar(50)
+  browser          String?              @db.VarChar(100)
+  os               String?              @db.VarChar(100)
+  ipAddress        Unsupported("inet")? @map("ip_address")
+  userAgent        String?              @map("user_agent")
+  status           SessionStatus        @default(ACTIVE)
+  lastSeenAt       DateTime?            @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt        DateTime             @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime?            @map("revoked_at") @db.Timestamptz(6)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status], map: "idx_sessions_user_status")
+  @@index([expiresAt], map: "idx_sessions_expires_at")
+  @@map("user_sessions")
+}
+
+model PasswordResetToken {
+  id        BigInt    @id @default(autoincrement()) @db.BigInt
+  userId    BigInt    @map("user_id") @db.BigInt
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_password_reset_user")
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id         BigInt    @id @default(autoincrement()) @db.BigInt
+  userId     BigInt    @map("user_id") @db.BigInt
+  tokenHash  String    @map("token_hash")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_email_verification_user")
+  @@map("email_verification_tokens")
+}
+
+model Folder {
+  id             BigInt    @id @default(autoincrement()) @db.BigInt
+  uuid           String    @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId BigInt    @map("organization_id") @db.BigInt
+  parentId       BigInt?   @map("parent_id") @db.BigInt
+  createdBy      BigInt    @map("created_by") @db.BigInt
+  name           String    @db.VarChar(255)
+  pathCache      String?   @map("path_cache")
+  color          String?   @db.VarChar(20)
+  description    String?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedBy      BigInt?   @map("deleted_by") @db.BigInt
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent        Folder?      @relation("FolderToFolder", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Folder[]     @relation("FolderToFolder")
+  createdByUser User         @relation("FolderCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  deletedByUser User?        @relation("FolderDeletedBy", fields: [deletedBy], references: [id], onDelete: SetNull)
   documents     Document[]
-  teamMembers   TeamMember[]
-  refreshTokens RefreshToken[]
+
+  @@index([organizationId, parentId], map: "idx_folders_org_parent")
+  @@index([deletedAt], map: "idx_folders_deleted_at")
+  @@map("folders")
 }
 
 model Document {
-  id           String         @id @default(cuid())
-  userId       String
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  filename     String
-  originalName String
-  mimeType     String
-  fileSize     Int
-  filePath     String
-  status       DocumentStatus @default(PROCESSING)
-  pageCount    Int?
-  processingMs Int?
-  errorMessage String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id                  BigInt         @id @default(autoincrement()) @db.BigInt
+  uuid                String         @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      BigInt         @map("organization_id") @db.BigInt
+  folderId            BigInt?        @map("folder_id") @db.BigInt
+  ownerUserId         BigInt         @map("owner_user_id") @db.BigInt
+  currentVersionId    BigInt?        @map("current_version_id") @db.BigInt
+  title               String         @db.VarChar(500)
+  originalFilename    String         @map("original_filename") @db.VarChar(500)
+  storageKey          String         @map("storage_key")
+  previewStorageKey   String?        @map("preview_storage_key")
+  thumbnailStorageKey String?        @map("thumbnail_storage_key")
+  mimeType            String         @map("mime_type") @db.VarChar(150)
+  fileExtension       String?        @map("file_extension") @db.VarChar(20)
+  fileSizeBytes       BigInt         @map("file_size_bytes") @db.BigInt
+  checksumSha256      String?        @map("checksum_sha256") @db.Char(64)
+  pageCount           Int?           @map("page_count")
+  languageCode        String?        @map("language_code") @db.VarChar(10)
+  status              DocumentStatus @default(UPLOADED)
+  sourceType          String         @default("upload") @map("source_type") @db.VarChar(50)
+  isFavoriteCount     Int            @default(0) @map("is_favorite_count")
+  metadataJson        Json           @default("{}") @map("metadata_json")
+  uploadedAt          DateTime       @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  updatedAt           DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt           DateTime?      @map("deleted_at") @db.Timestamptz(6)
+  deletedBy           BigInt?        @map("deleted_by") @db.BigInt
 
-  brief      Brief?
-  shareLinks ShareLink[]
+  organization    Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folder          Folder?                  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  owner           User                     @relation("DocumentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  currentVersion  DocumentVersion?         @relation("DocumentCurrentVersion", fields: [currentVersionId], references: [id], onDelete: NoAction)
+  deletedByUser   User?                    @relation("DocumentDeletedBy", fields: [deletedBy], references: [id], onDelete: SetNull)
+  versions        DocumentVersion[]        @relation("DocumentVersions")
+  accessHistory   DocumentAccessHistory[]
+  aiJobs          AiJob[]
+  ocrResult       DocumentOcrResult?
+  aiSummaries     DocumentAiSummary[]
+  classifications DocumentClassification[]
+
+  @@index([organizationId, folderId], map: "idx_documents_org_folder")
+  @@index([ownerUserId], map: "idx_documents_owner")
+  @@index([status], map: "idx_documents_status")
+  @@index([deletedAt], map: "idx_documents_deleted_at")
+  @@index([uploadedAt(sort: Desc)], map: "idx_documents_uploaded_at")
+  @@index([currentVersionId], map: "idx_documents_current_version")
+  @@index([metadataJson], type: Gin, map: "idx_documents_metadata_gin")
+  @@map("documents")
 }
 
-model Brief {
-  id                 String     @id @default(cuid())
-  documentId         String     @unique
-  document           Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  parties            String?
-  effectiveDate      String?
-  obligations        String?
-  payment            String?
-  penalties          String?
-  renewalTerms       String?
-  redFlags           String[]
-  recommendedActions String[]
-  createdAt          DateTime   @default(now())
+model DocumentVersion {
+  id                  BigInt   @id @default(autoincrement()) @db.BigInt
+  uuid                String   @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId          BigInt   @map("document_id") @db.BigInt
+  versionNumber       Int      @map("version_number")
+  storageKey          String   @map("storage_key")
+  previewStorageKey   String?  @map("preview_storage_key")
+  thumbnailStorageKey String?  @map("thumbnail_storage_key")
+  fileSizeBytes       BigInt   @map("file_size_bytes") @db.BigInt
+  mimeType            String   @map("mime_type") @db.VarChar(150)
+  checksumSha256      String?  @map("checksum_sha256") @db.Char(64)
+  pageCount           Int?     @map("page_count")
+  createdBy           BigInt   @map("created_by") @db.BigInt
+  versionNote         String?  @map("version_note")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  questions Question[]
+  document            Document   @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  createdByUser       User       @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  currentForDocuments Document[] @relation("DocumentCurrentVersion")
+
+  @@unique([documentId, versionNumber], map: "uq_document_version")
+  @@index([documentId, createdAt(sort: Desc)], map: "idx_document_versions_doc_created_at")
+  @@map("document_versions")
 }
 
-model Question {
-  id        String   @id @default(cuid())
-  briefId   String
-  brief     Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
-  question  String
-  answer    String
-  createdAt DateTime @default(now())
+model DocumentAccessHistory {
+  id         BigInt   @id @default(autoincrement()) @db.BigInt
+  documentId BigInt   @map("document_id") @db.BigInt
+  userId     BigInt   @map("user_id") @db.BigInt
+  accessedAt DateTime @default(now()) @map("accessed_at") @db.Timestamptz(6)
+  accessType String   @map("access_type") @db.VarChar(50)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, accessedAt(sort: Desc)], map: "idx_doc_access_user_time")
+  @@index([documentId, accessedAt(sort: Desc)], map: "idx_doc_access_doc_time")
+  @@map("document_access_history")
 }
 
-model ShareLink {
-  id         String    @id @default(cuid())
-  documentId String
-  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  token      String    @unique @default(cuid())
-  expiresAt  DateTime?
-  createdAt  DateTime  @default(now())
+model AiJob {
+  id              BigInt      @id @default(autoincrement()) @db.BigInt
+  uuid            String      @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  BigInt      @map("organization_id") @db.BigInt
+  documentId      BigInt      @map("document_id") @db.BigInt
+  triggeredBy     BigInt?     @map("triggered_by") @db.BigInt
+  jobType         AiJobType   @map("job_type")
+  status          AiJobStatus @default(QUEUED)
+  providerName    String?     @map("provider_name") @db.VarChar(100)
+  modelName       String?     @map("model_name") @db.VarChar(150)
+  priority        Int         @default(5) @db.SmallInt
+  progressPercent Decimal     @default(0) @map("progress_percent") @db.Decimal(5, 2)
+  inputJson       Json        @default("{}") @map("input_json")
+  outputJson      Json        @default("{}") @map("output_json")
+  errorMessage    String?     @map("error_message")
+  startedAt       DateTime?   @map("started_at") @db.Timestamptz(6)
+  completedAt     DateTime?   @map("completed_at") @db.Timestamptz(6)
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  organization            Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document                Document                 @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  triggeredByUser         User?                    @relation(fields: [triggeredBy], references: [id], onDelete: SetNull)
+  documentOcrResults      DocumentOcrResult[]
+  documentAiSummaries     DocumentAiSummary[]
+  documentClassifications DocumentClassification[]
+
+  @@index([documentId, createdAt(sort: Desc)], map: "idx_ai_jobs_doc")
+  @@index([organizationId, status], map: "idx_ai_jobs_org_status")
+  @@index([status], map: "idx_ai_jobs_status")
+  @@index([jobType], map: "idx_ai_jobs_type")
+  @@index([inputJson], type: Gin, map: "idx_ai_jobs_input_gin")
+  @@index([outputJson], type: Gin, map: "idx_ai_jobs_output_gin")
+  @@map("ai_jobs")
 }
 
-model Team {
-  id        String       @id @default(cuid())
-  name      String
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+model DocumentOcrResult {
+  id               BigInt   @id @default(autoincrement()) @db.BigInt
+  documentId       BigInt   @unique(map: "uq_document_ocr_result") @map("document_id") @db.BigInt
+  aiJobId          BigInt?  @map("ai_job_id") @db.BigInt
+  extractedText    String?  @map("extracted_text")
+  pageTextJson     Json     @default("[]") @map("page_text_json")
+  confidenceScore  Decimal? @map("confidence_score") @db.Decimal(5, 2)
+  languageDetected String?  @map("language_detected") @db.VarChar(20)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  members TeamMember[]
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  aiJob    AiJob?   @relation(fields: [aiJobId], references: [id], onDelete: SetNull)
+
+  @@index([documentId], map: "idx_ocr_doc")
+  @@map("document_ocr_results")
 }
 
-model TeamMember {
-  id        String   @id @default(cuid())
-  teamId    String
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      TeamRole @default(MEMBER)
-  createdAt DateTime @default(now())
+model DocumentAiSummary {
+  id              BigInt   @id @default(autoincrement()) @db.BigInt
+  documentId      BigInt   @map("document_id") @db.BigInt
+  aiJobId         BigInt?  @map("ai_job_id") @db.BigInt
+  summaryType     String   @default("general") @map("summary_type") @db.VarChar(50)
+  summaryText     String   @map("summary_text")
+  keyPointsJson   Json     @default("[]") @map("key_points_json")
+  confidenceScore Decimal? @map("confidence_score") @db.Decimal(5, 2)
+  providerName    String?  @map("provider_name") @db.VarChar(100)
+  modelName       String?  @map("model_name") @db.VarChar(150)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([teamId, userId])
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  aiJob    AiJob?   @relation(fields: [aiJobId], references: [id], onDelete: SetNull)
+
+  @@index([documentId, summaryType], map: "idx_summaries_doc_type")
+  @@map("document_ai_summaries")
 }
 
-model RefreshToken {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+model DocumentClassification {
+  id              BigInt   @id @default(autoincrement()) @db.BigInt
+  documentId      BigInt   @map("document_id") @db.BigInt
+  aiJobId         BigInt?  @map("ai_job_id") @db.BigInt
+  classLabel      String   @map("class_label") @db.VarChar(150)
+  confidenceScore Decimal  @map("confidence_score") @db.Decimal(5, 2)
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  aiJob    AiJob?   @relation(fields: [aiJobId], references: [id], onDelete: SetNull)
+
+  @@index([documentId], map: "idx_classifications_doc")
+  @@index([documentId, isPrimary], map: "idx_classifications_primary")
+  @@map("document_classifications")
+}
+
+model SearchHistory {
+  id             BigInt   @id @default(autoincrement()) @db.BigInt
+  organizationId BigInt   @map("organization_id") @db.BigInt
+  userId         BigInt   @map("user_id") @db.BigInt
+  queryText      String   @map("query_text")
+  queryType      String   @default("basic") @map("query_type") @db.VarChar(30)
+  filtersJson    Json     @default("{}") @map("filters_json")
+  resultCount    Int?     @map("result_count")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_search_history_user_time")
+  @@index([organizationId, createdAt(sort: Desc)], map: "idx_search_history_org_time")
+  @@map("search_history")
 }

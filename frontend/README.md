@@ -1,5 +1,17 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Environment Setup
+
+Copy `.env.example` to `.env.local` and update values:
+
+```bash
+cp .env.example .env.local
+```
+
+- `APP_URL` / `NEXT_PUBLIC_APP_URL`: frontend URL
+- `API_URL` / `NEXT_PUBLIC_API_URL`: backend REST API URL
+- `NEXT_PUBLIC_DOCUMENT_STORAGE_LIMIT`: storage quota in bytes (used by Documents page usage card)
+
 ## Getting Started
 
 First, run the development server:

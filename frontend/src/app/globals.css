@@ -17,7 +17,7 @@
 @theme {
   /* Fonts — variables injected by next/font in layout.tsx */
   --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-instrument-serif), Georgia, serif;
+  --font-serif: var(--font-montserrat), "Montserrat", ui-sans-serif, system-ui, sans-serif;
 
   /* Brand colours */
   --color-ink: #0F0E0C;
@@ -76,6 +76,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 /* ── Grain overlay ──────────────────────────────────────────────────────── */
 /*
  * Adds a subtle paper-grain texture over the entire page using an inline SVG
@@ -95,8 +103,8 @@ body::after {
 
 /* ── Typography helpers ─────────────────────────────────────────────────── */
 
-/* Tailwind's `font-serif` applies the serif family but not italic.
-   This utility adds both at once for the editorial italic style in headings. */
+/* Tailwind's `font-serif` applies the configured display family but not italic.
+   This utility applies italic style with the same display family. */
 .font-serif-italic {
   font-family: var(--font-serif);
   font-style: italic;

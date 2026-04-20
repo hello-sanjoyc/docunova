@@ -22,7 +22,6 @@ pnpm-debug.log*
 ############################
 .env
 .env.*
-!.env.example
 
 ############################
 # Backend (Fastify / Node)
@@ -65,6 +64,7 @@ nbproject/
 # Misc
 ############################
 .eslintcache
+docs/
 
 ############################
 # Deployment    

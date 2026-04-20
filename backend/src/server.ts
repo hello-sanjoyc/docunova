@@ -1,99 +1,31 @@
-import "dotenv/config";
-import Fastify from "fastify";
-import cors from "@fastify/cors";
-import multipart from "@fastify/multipart";
-import rateLimit from "@fastify/rate-limit";
+import { buildApp } from './app';
+import env from './config/env';
+import { appLogger } from './config/logger';
 
-import { prisma } from "./lib/prisma.js";
-import authPlugin from "./plugins/auth.js";
-import { ensureUploadsDir } from "./services/document.service.js";
+async function start() {
+  const app = await buildApp();
 
-import authRoutes from "./routes/auth.js";
-import documentRoutes from "./routes/documents.js";
-import teamRoutes from "./routes/teams.js";
-import shareRoutes from "./routes/share.js";
-
-const app = Fastify({ logger: true });
-const port = Number(process.env.PORT ?? 4000);
-const host = process.env.HOST ?? "0.0.0.0";
-
-// ─── Plugins ──────────────────────────────────────────────────────────────────
-
-await app.register(cors, {
-  origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
-  credentials: true,
-});
-
-await app.register(rateLimit, {
-  max: 100,
-  timeWindow: "1 minute",
-});
-
-await app.register(multipart, {
-  limits: {
-    fileSize: 20 * 1024 * 1024, // 20 MB
-    files: 1,
-  },
-});
-
-await app.register(authPlugin);
-
-// ─── Routes ───────────────────────────────────────────────────────────────────
-
-await app.register(authRoutes,     { prefix: "/api/auth" });
-await app.register(documentRoutes, { prefix: "/api/documents" });
-await app.register(teamRoutes,     { prefix: "/api/teams" });
-await app.register(shareRoutes,    { prefix: "/api/share" });
-
-// ─── Health ───────────────────────────────────────────────────────────────────
-
-app.get("/health", async () => ({ status: "ok" }));
-
-app.get("/health/db", async () => {
-  await prisma.$queryRaw`SELECT 1`;
-  return { status: "ok", db: "connected" };
-});
-
-// ─── Global error handler ─────────────────────────────────────────────────────
-
-app.setErrorHandler((error: Error & { statusCode?: number; validation?: unknown }, _request, reply) => {
-  app.log.error(error);
-
-  if (error.validation) {
-    return reply.status(400).send({
-      error: "ValidationError",
-      message: error.message,
+  try {
+    await app.listen({ port: env.PORT, host: env.HOST });
+    appLogger.info('Server started', {
+      host: env.HOST,
+      port: env.PORT,
+      url: `http://${env.HOST}:${env.PORT}`,
+      nodeEnv: env.NODE_ENV,
     });
+  } catch (err) {
+    appLogger.error('Failed to start server', { err });
+    process.exit(1);
   }
+}
 
-  const status = error.statusCode ?? 500;
-  reply.status(status).send({
-    error: status === 500 ? "InternalServerError" : error.name,
-    message: status === 500 ? "An unexpected error occurred" : error.message,
-  });
+process.on('unhandledRejection', (reason) => {
+  appLogger.error('Unhandled promise rejection', { reason });
 });
 
-// ─── Shutdown ─────────────────────────────────────────────────────────────────
-
-const shutdown = async (signal: NodeJS.Signals) => {
-  app.log.info(`received ${signal}, shutting down`);
-  await app.close();
-  await prisma.$disconnect();
-  process.exit(0);
-};
-
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
-
-// ─── Start ────────────────────────────────────────────────────────────────────
-
-await ensureUploadsDir();
-
-try {
-  await app.listen({ port, host });
-  app.log.info(`backend running on http://${host}:${port}`);
-} catch (error) {
-  app.log.error(error);
-  await prisma.$disconnect();
+process.on('uncaughtException', (err) => {
+  appLogger.error('Uncaught exception', { err });
   process.exit(1);
-}
+});
+
+start();

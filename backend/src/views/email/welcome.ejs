@@ -1,0 +1,65 @@
+<%
+  subject = 'Welcome to Docunova!';
+  appUrl  = appUrl || 'https://docunova.app';
+%>
+<%- await include('partials/_header', { subject, appUrl }) %>
+
+  <!-- Greeting -->
+  <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#3d3327;line-height:1.3;">
+    Welcome to Docunova, <%= name %>! 🎉
+  </h1>
+  <p style="margin:0 0 16px;font-size:15px;color:#3d3327;line-height:1.6;">
+    Your email has been verified and your account is all set. You can now upload,
+    organise, and collaborate on documents with your team.
+  </p>
+
+  <!-- Feature highlights -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 28px;">
+    <tr>
+      <td style="padding:16px;background-color:#e3cead;border-radius:6px;">
+
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+          <tr>
+            <td width="36" valign="top" style="padding-right:12px;font-size:20px;">📄</td>
+            <td>
+              <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#3d3327;">Upload documents</p>
+              <p style="margin:0;font-size:13px;color:#3d3327;">PDFs, images, Word files and more — all in one place.</p>
+            </td>
+          </tr>
+          <tr><td colspan="2" style="height:14px;"></td></tr>
+          <tr>
+            <td width="36" valign="top" style="padding-right:12px;font-size:20px;">🤖</td>
+            <td>
+              <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#3d3327;">AI-powered insights</p>
+              <p style="margin:0;font-size:13px;color:#3d3327;">OCR, classification, extraction and smart summaries.</p>
+            </td>
+          </tr>
+          <tr><td colspan="2" style="height:14px;"></td></tr>
+          <tr>
+            <td width="36" valign="top" style="padding-right:12px;font-size:20px;">🔍</td>
+            <td>
+              <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#3d3327;">Powerful search</p>
+              <p style="margin:0;font-size:13px;color:#3d3327;">Full-text and semantic search across all your content.</p>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+  <!-- CTA Button -->
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 28px;">
+    <tr>
+      <td style="border-radius:6px;background-color:#e5c186;">
+        <a href="<%= dashboardUrl %>"
+           target="_blank"
+           style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;
+                  color:#3d3327;text-decoration:none;border-radius:6px;letter-spacing:0.2px;">
+          Go to Dashboard
+        </a>
+      </td>
+    </tr>
+  </table>
+
+<%- await include('partials/_footer', { appUrl }) %>

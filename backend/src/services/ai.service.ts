@@ -1,94 +1,287 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
+import env from "../config/env";
+import { createLogger } from "../config/logger";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// ── Provider base URLs ────────────────────────────────────────────────────────
 
-// ─── Contract Brief ───────────────────────────────────────────────────────────
+const PROVIDER_BASE_URLS: Record<string, string> = {
+    groq: "https://api.groq.com/openai/v1",
+    openai: "https://api.openai.com/v1",
+};
+const logger = createLogger({ context: "ai-service" });
 
-export interface ContractBrief {
-    parties: string;
-    effectiveDate: string;
-    obligations: string;
-    payment: string;
-    penalties: string;
-    renewalTerms: string;
-    redFlags: string[];
-    recommendedActions: string[];
+// ── Summary schema (mirrors the requested response shape) ─────────────────────
+
+export interface RiskItem {
+    title: string;
+    severity: "low" | "medium" | "high";
+    details: string;
+    clause_reference: string | null;
 }
 
-const BRIEF_SYSTEM_PROMPT = `You are an expert contract analyst. Given contract text, extract the following fields and return ONLY valid JSON matching this schema exactly — no markdown, no explanation:
-
-{
-  "parties": "string — names of all parties",
-  "effectiveDate": "string — contract start/end dates and duration",
-  "obligations": "string — key obligations of each party",
-  "payment": "string — payment amounts, schedule, and late fees",
-  "penalties": "string — penalties, termination clauses, and damages",
-  "renewalTerms": "string — auto-renewal, notice periods, exit options",
-  "redFlags": ["array of concise strings, each a specific risk or trap"],
-  "recommendedActions": ["array of concise strings, each an actionable recommendation"]
+export interface ActionItem {
+    title: string;
+    priority: "low" | "medium" | "high";
+    details: string;
 }
 
-If a field is not present in the contract, use null or an empty array. Be precise and factual.`;
+export interface DocumentSummary {
+    document_title: string | null;
+    parties: string | null;
+    effective_date: string | null;
+    obligations: string | null;
+    payment: string | null;
+    red_flags: string | null;
+    actions: string | null;
+    summary: string;
+    risk_items: RiskItem[];
+    action_items: ActionItem[];
+    notes: string[];
+}
 
-export async function analyzeContract(text: string): Promise<ContractBrief> {
-    const truncated = text.slice(0, 90_000); // stay within context limits
+// ── Provider wrapper ──────────────────────────────────────────────────────────
+//
+// Routes the completion call to the correct provider based on AI_PROVIDER.
+// Both OpenAI and Groq use the same OpenAI-compatible SDK interface; only the
+// base URL and feature availability (e.g. json_object mode) differ.
+//
+// Add a new branch here when a new provider is needed.
 
-    const message = await client.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 2048,
-        system: BRIEF_SYSTEM_PROMPT,
-        messages: [
-            {
-                role: "user",
-                content: `Analyze this contract and return the JSON brief:\n\n${truncated}`,
-            },
-        ],
-    });
+interface CallOptions {
+    systemPrompt: string;
+    userMessage: string;
+    temperature?: number;
+}
 
-    const raw =
-        message.content[0].type === "text" ? message.content[0].text : "";
+function extractBalancedJsonObject(input: string): string | null {
+    const start = input.indexOf("{");
+    if (start < 0) return null;
 
-    // Strip any accidental markdown fences
-    const json = raw
-        .replace(/^```json\s*/i, "")
-        .replace(/```\s*$/, "")
+    let depth = 0;
+    let inString = false;
+    let isEscaped = false;
+
+    for (let i = start; i < input.length; i += 1) {
+        const ch = input[i];
+
+        if (inString) {
+            if (isEscaped) {
+                isEscaped = false;
+                continue;
+            }
+            if (ch === "\\") {
+                isEscaped = true;
+                continue;
+            }
+            if (ch === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = true;
+            continue;
+        }
+
+        if (ch === "{") {
+            depth += 1;
+            continue;
+        }
+
+        if (ch === "}") {
+            depth -= 1;
+            if (depth === 0) {
+                return input.slice(start, i + 1);
+            }
+        }
+    }
+
+    return null;
+}
+
+function parseModelJson(raw: string): Partial<DocumentSummary> {
+    const cleaned = raw
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/, "")
         .trim();
 
-    const parsed = JSON.parse(json) as Partial<ContractBrief>;
+    try {
+        return JSON.parse(cleaned) as Partial<DocumentSummary>;
+    } catch {
+        // Fallback for model responses like:
+        // "Here is the JSON summary: { ... }"
+        const extracted = extractBalancedJsonObject(cleaned);
+        if (!extracted)
+            throw new Error("No valid JSON object found in model output");
+        return JSON.parse(extracted) as Partial<DocumentSummary>;
+    }
+}
+
+async function callAiModel(options: CallOptions): Promise<string> {
+    const provider = env.AI_PROVIDER;
+
+    // Resolve base URL: explicit override → provider default → SDK default (OpenAI)
+    const baseURL =
+        env.AI_BASE_URL ?? PROVIDER_BASE_URLS[provider] ?? undefined;
+
+    const client = new OpenAI({ apiKey: env.AI_MODEL_API_KEY, baseURL });
+    logger.info("AI model call started", {
+        provider,
+        model: env.AI_MODEL_NAME,
+        hasBaseUrlOverride: Boolean(env.AI_BASE_URL),
+    });
+
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+        { role: "system", content: options.systemPrompt },
+        { role: "user", content: options.userMessage },
+    ];
+
+    // Groq supports json_object mode only on specific models; gate it by provider
+    const supportsJsonMode = provider === "openai";
+
+    const startedAt = Date.now();
+    const response = await client.chat.completions.create({
+        model: env.AI_MODEL_NAME,
+        messages,
+        temperature: options.temperature ?? 0.2,
+        ...(supportsJsonMode
+            ? { response_format: { type: "json_object" } }
+            : {}),
+    });
+
+    logger.info("AI model call completed", {
+        provider,
+        model: env.AI_MODEL_NAME,
+        durationMs: Date.now() - startedAt,
+    });
+
+    return response.choices[0]?.message?.content ?? "{}";
+}
+
+// ── Prompt ────────────────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `
+You are a legal document analyst.
+
+Analyze the provided document text and return a structured JSON summary.
+
+IMPORTANT:
+- You MUST return ONLY valid JSON.
+- Do NOT include any text before or after the JSON.
+- Do NOT include explanations, markdown, or comments.
+- If you violate this, the response will be rejected.
+
+Extraction requirements:
+- parties involved
+- effective date / term
+- key obligations
+- payment terms
+- red flags (auto-renewal, exclusivity, penalties, vague language, liability issues, etc.)
+- recommended business actions
+- "summary": a plain-English overview of the document in AT MOST 200 words (never exceed 200 words; aim for 150-200). It must be a single continuous paragraph, cover the document's purpose, parties, main obligations, payment, and notable risks, and be safe to show directly to end users.
+
+Rules:
+- Use plain English.
+- Be concise but specific.
+- Do NOT invent information.
+- If unclear, return null and explain briefly in "notes".
+- Focus only on commercially important terms.
+
+Output must EXACTLY match this JSON schema:
+
+{
+  "document_title": string | null,
+  "parties": string | null,
+  "effective_date": string | null,
+  "obligations": string | null,
+  "payment": string | null,
+  "red_flags": string | null,
+  "actions": string | null,
+  "risk_items": [
+    {
+      "title": string,
+      "severity": "low" | "medium" | "high",
+      "details": string,
+      "clause_reference": string | null
+    }
+  ],
+  "action_items": [
+    {
+      "title": string,
+      "priority": "low" | "medium" | "high",
+      "details": string
+    }
+  ],
+  "summary": string,
+  "notes": string[]
+}
+
+Return ONLY valid JSON.
+`;
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export async function generateSummary(
+    documentText: string,
+): Promise<DocumentSummary> {
+    logger.info("AI summary generation started", {
+        documentTextLength: documentText.length,
+        truncatedTo: Math.min(documentText.length, 120_000),
+    });
+    const raw = await callAiModel({
+        systemPrompt: SYSTEM_PROMPT,
+        userMessage: `Analyse the following document and return the JSON summary:\n\n${documentText.slice(0, 120_000)}`,
+    });
+
+    let parsed: Partial<DocumentSummary>;
+    try {
+        parsed = parseModelJson(raw);
+    } catch (err) {
+        logger.error("AI summary parsing failed", {
+            rawLength: raw.length,
+            cleanedLength: raw
+                .replace(/^```(?:json)?\s*/i, "")
+                .replace(/\s*```$/, "")
+                .trim().length,
+            err,
+        });
+        throw err;
+    }
+
+    logger.info("AI summary generation completed", {
+        hasParties: Boolean(parsed.parties),
+        hasEffectiveDate: Boolean(parsed.effective_date),
+        riskItemCount: Array.isArray(parsed.risk_items)
+            ? parsed.risk_items.length
+            : 0,
+        actionItemCount: Array.isArray(parsed.action_items)
+            ? parsed.action_items.length
+            : 0,
+    });
+
     return {
-        parties: parsed.parties ?? "",
-        effectiveDate: parsed.effectiveDate ?? "",
-        obligations: parsed.obligations ?? "",
-        payment: parsed.payment ?? "",
-        penalties: parsed.penalties ?? "",
-        renewalTerms: parsed.renewalTerms ?? "",
-        redFlags: Array.isArray(parsed.redFlags) ? parsed.redFlags : [],
-        recommendedActions: Array.isArray(parsed.recommendedActions)
-            ? parsed.recommendedActions
+        document_title: parsed.document_title ?? null,
+        parties: parsed.parties ?? null,
+        effective_date: parsed.effective_date ?? null,
+        obligations: parsed.obligations ?? null,
+        payment: parsed.payment ?? null,
+        red_flags: parsed.red_flags ?? null,
+        actions: parsed.actions ?? null,
+        summary: enforceWordLimit(parsed.summary ?? "", 200),
+        risk_items: Array.isArray(parsed.risk_items) ? parsed.risk_items : [],
+        action_items: Array.isArray(parsed.action_items)
+            ? parsed.action_items
             : [],
+        notes: Array.isArray(parsed.notes) ? parsed.notes : [],
     };
 }
 
-// ─── Follow-up Question ───────────────────────────────────────────────────────
-
-export async function answerQuestion(
-    contractText: string,
-    brief: ContractBrief,
-    question: string,
-): Promise<string> {
-    const truncated = contractText.slice(0, 80_000);
-
-    const message = await client.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1024,
-        system: "You are an expert contract analyst helping a user understand their contract. Answer concisely and accurately, citing specific contract language where relevant. Do not give legal advice — note when professional counsel is recommended.",
-        messages: [
-            {
-                role: "user",
-                content: `Contract summary:\n${JSON.stringify(brief, null, 2)}\n\nFull contract text:\n${truncated}\n\nUser question: ${question}`,
-            },
-        ],
-    });
-
-    return message.content[0].type === "text" ? message.content[0].text : "";
+// Trim overflow to guarantee the <=200 word contract even if the model overshoots.
+function enforceWordLimit(text: string, maxWords: number): string {
+    const normalized = (text || "").replace(/\s+/g, " ").trim();
+    if (!normalized) return "";
+    const words = normalized.split(" ");
+    if (words.length <= maxWords) return normalized;
+    return `${words.slice(0, maxWords).join(" ")}…`;
 }

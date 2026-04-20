@@ -1,5 +1,6 @@
 export const SITE_NAME = "DocuNova AI";
 export const SITE_URL =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") ||
     process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "") ||
     "https://docunova.app";
 export const SITE_DESCRIPTION =
