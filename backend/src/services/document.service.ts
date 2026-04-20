@@ -749,12 +749,21 @@ export async function restoreDocument(documentUuid: string, userId: string) {
         throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
     }
 
+    const existingSummary = await prisma.documentAiSummary.findFirst({
+        where: {
+            documentId: doc.id,
+            summaryType: "general",
+        },
+        select: { id: true },
+    });
+    const restoredStatus = existingSummary ? "READY" : "UPLOADED";
+
     const updated = await prisma.document.update({
         where: { id: doc.id },
         data: {
             deletedAt: null,
             deletedBy: null,
-            status: "UPLOADED",
+            status: restoredStatus,
             updatedAt: new Date(),
         },
     });
