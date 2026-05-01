@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { Download, FileText, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import {
     listTrashDocuments,
     restoreDocument,
-    type DocumentItem,
 } from "@/lib/api/documents";
 import { formatApiError } from "@/lib/api/errors";
 import { handleDownload as handleDownloadDocument } from "@/lib/utils/documentActions";
+import { useApiQuery } from "@/lib/query/apiQuery";
+import { queryKeys } from "@/lib/query/queryKeys";
 
 const PAGE_SIZE = 10;
 
@@ -42,39 +44,35 @@ function formatSizeFromBytes(bytes: number) {
 }
 
 export default function TrashPageClient() {
-    const [documents, setDocuments] = useState<DocumentItem[]>([]);
-    const [total, setTotal] = useState(0);
+    const queryClient = useQueryClient();
     const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [loading, setLoading] = useState(true);
-    const [listError, setListError] = useState("");
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
-
-    const fetchTrashDocuments = useCallback(async () => {
-        setLoading(true);
-        setListError("");
-        try {
-            const result = await listTrashDocuments({
+    const trashDocumentsQuery = useApiQuery({
+        queryKey: queryKeys.documents.trashListing({
+            page,
+            pageSize: PAGE_SIZE,
+        }),
+        queryFn: () =>
+            listTrashDocuments({
                 page,
                 limit: PAGE_SIZE,
                 sortBy: "updatedAt",
                 sortOrder: "desc",
-            });
-            setDocuments(result.data);
-            setTotal(result.total);
-            setTotalPages(Math.max(1, result.totalPages));
-        } catch (error) {
-            const message = formatApiError(error);
-            setListError(message);
-            toast.error(message);
-        } finally {
-            setLoading(false);
-        }
-    }, [page]);
+            }),
+    });
 
     useEffect(() => {
-        void fetchTrashDocuments();
-    }, [fetchTrashDocuments]);
+        if (!trashDocumentsQuery.isError) return;
+        toast.error(formatApiError(trashDocumentsQuery.error));
+    }, [trashDocumentsQuery.error, trashDocumentsQuery.isError]);
+
+    const documents = trashDocumentsQuery.data?.data ?? [];
+    const total = trashDocumentsQuery.data?.total ?? 0;
+    const totalPages = Math.max(1, trashDocumentsQuery.data?.totalPages ?? 1);
+    const loading = trashDocumentsQuery.isPending || trashDocumentsQuery.isFetching;
+    const listError = trashDocumentsQuery.isError
+        ? formatApiError(trashDocumentsQuery.error)
+        : "";
 
     const summaryText = useMemo(() => {
         if (total === 0) return "Showing 0 records";
@@ -96,7 +94,20 @@ export default function TrashPageClient() {
         try {
             await restoreDocument(documentId);
             toast.success("Document restored");
-            await fetchTrashDocuments();
+            await Promise.all([
+                queryClient.invalidateQueries({
+                    queryKey: ["documents", "trashListing"],
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: ["documents", "listing"],
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.documents.totalUploaded(),
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.user.dashboardOverview(),
+                }),
+            ]);
         } catch (error) {
             toast.error(formatApiError(error));
         } finally {

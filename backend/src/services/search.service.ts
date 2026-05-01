@@ -8,6 +8,17 @@ import {
     getRecentlySearchedDocumentUuids,
     clearRecentSearchedDocuments,
 } from "./searchCache.service";
+import { cacheDel, cacheGetOrSet, cacheKey } from "./cache.service";
+
+const RECENT_STATS_TTL_SECONDS = 60;
+
+function recentStatsKey(userUuid: string) {
+    return cacheKey("recent-stats", userUuid);
+}
+
+export async function invalidateRecentStatsCache(userUuid: string) {
+    await cacheDel(recentStatsKey(userUuid));
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -120,14 +131,13 @@ export async function searchDocuments(input: SearchInput) {
             logger.warn("Search history persist failed", { err });
         });
 
-    // Cache surfaced document UUIDs in Redis so GET /search/recent can
-    // combine "recently searched" with "recently created" documents.
-    if (documents.length) {
-        recordSearchedDocuments(
-            input.userId,
-            documents.map((d) => d.uuid),
-        ).catch(() => {});
-    }
+    // Keep search-related Redis updates in one pipeline call: bust the
+    // recent-activity stats cache and record surfaced document UUIDs.
+    recordSearchedDocuments(
+        input.userId,
+        documents.map((d) => d.uuid),
+        { deleteKeys: [recentStatsKey(input.userId)] },
+    ).catch(() => {});
 
     logger.info("Search execution completed", { total });
 
@@ -261,42 +271,44 @@ export async function getRecentSearches(userId: string, limit = 20) {
 // loaded independently and reflect totals (not just what fits in the listing).
 
 export async function getRecentActivityStats(userId: string) {
-    const owner = await resolveOwner(userId);
+    return cacheGetOrSet(recentStatsKey(userId), RECENT_STATS_TTL_SECONDS, async () => {
+        const owner = await resolveOwner(userId);
 
-    const windowStart = new Date(
-        Date.now() - env.RECENT_DAYS * 24 * 60 * 60 * 1000,
-    );
+        const windowStart = new Date(
+            Date.now() - env.RECENT_DAYS * 24 * 60 * 60 * 1000,
+        );
 
-    const [createdCount, searchedCount, trashedCount] = await Promise.all([
-        prisma.document.count({
-            where: {
-                ownerUserId: owner.id,
-                deletedAt: null,
-                uploadedAt: { gte: windowStart },
-            },
-        }),
-        prisma.searchHistory.count({
-            where: {
-                userId: owner.id,
-                createdAt: { gte: windowStart },
-            },
-        }),
-        prisma.document.count({
-            where: {
-                ownerUserId: owner.id,
-                status: "TRASHED",
-                deletedAt: { gte: windowStart },
-            },
-        }),
-    ]);
+        const [createdCount, searchedCount, trashedCount] = await Promise.all([
+            prisma.document.count({
+                where: {
+                    ownerUserId: owner.id,
+                    deletedAt: null,
+                    uploadedAt: { gte: windowStart },
+                },
+            }),
+            prisma.searchHistory.count({
+                where: {
+                    userId: owner.id,
+                    createdAt: { gte: windowStart },
+                },
+            }),
+            prisma.document.count({
+                where: {
+                    ownerUserId: owner.id,
+                    status: "TRASHED",
+                    deletedAt: { gte: windowStart },
+                },
+            }),
+        ]);
 
-    return {
-        recentDays: env.RECENT_DAYS,
-        windowStart,
-        createdCount,
-        searchedCount,
-        trashedCount,
-    };
+        return {
+            recentDays: env.RECENT_DAYS,
+            windowStart,
+            createdCount,
+            searchedCount,
+            trashedCount,
+        };
+    });
 }
 
 // ── DELETE /search/recent ─────────────────────────────────────────────────────
@@ -309,5 +321,6 @@ export async function clearSearchHistory(userId: string) {
         clearRecentSearchedDocuments(owner.uuid).catch(() => 0),
     ]);
 
+    await invalidateRecentStatsCache(userId);
     return { deleted: deletedHistory.count };
 }

@@ -2,6 +2,7 @@ import prisma from '../config/prisma';
 import env from '../config/env';
 import { appLogger, createLogger } from '../config/logger';
 import { generateSummary } from './ai.service';
+import { invalidateDocumentListCacheForUser } from './document.service';
 
 // ── Core orchestration ────────────────────────────────────────────────────────
 
@@ -95,7 +96,14 @@ export async function runAiSummarize(
             parties: summary.parties,
             effective_date: summary.effective_date,
             obligations: summary.obligations,
+            indemnity: summary.indemnity,
+            IP: summary.IP,
+            confidentiality: summary.confidentiality,
             payment: summary.payment,
+            renewal_date: summary.renewal_date,
+            renewal_terms: summary.renewal_terms,
+            total_spend: summary.total_spend,
+            spend_currency: summary.spend_currency,
             red_flags: summary.red_flags,
             actions: summary.actions,
             summary: summary.summary,
@@ -136,13 +144,21 @@ export async function runAiSummarize(
         const existingMeta = (doc.metadataJson as Record<string, unknown>) ?? {};
         const updatedMeta: Record<string, unknown> = {
             ...existingMeta,
-            ...(summary.parties && { parties: summary.parties }),
-            ...(summary.effective_date && { effectiveDate: summary.effective_date }),
-            ...(summary.obligations && { obligations: summary.obligations }),
-            ...(summary.payment && { payment: summary.payment }),
-            ...(summary.red_flags && { redFlags: summary.red_flags }),
-            ...(summary.actions && { actions: summary.actions }),
-            ...(summary.summary && { summary: summary.summary }),
+            documentTitle: summary.document_title,
+            parties: summary.parties,
+            effectiveDate: summary.effective_date,
+            obligations: summary.obligations,
+            indemnity: summary.indemnity,
+            IP: summary.IP,
+            confidentiality: summary.confidentiality,
+            payment: summary.payment,
+            renewalDate: summary.renewal_date,
+            renewalTerms: summary.renewal_terms,
+            totalSpend: summary.total_spend,
+            spendCurrency: summary.spend_currency,
+            redFlags: summary.red_flags,
+            actions: summary.actions,
+            summary: summary.summary || null,
         };
 
         // End-to-end processing time: from initial document upload to AI completion.
@@ -167,6 +183,7 @@ export async function runAiSummarize(
                 metadataJson: updatedMeta as never,
             },
         });
+        await invalidateDocumentListCacheForUser(userId).catch(() => {});
         logger.info("Document status updated to READY");
 
         // Mark job COMPLETED
@@ -201,6 +218,7 @@ export async function runAiSummarize(
             where: { id: doc.id },
             data: { status: 'FAILED' },
         }).catch(() => {});
+        await invalidateDocumentListCacheForUser(userId).catch(() => {});
 
         // Mark AiJob FAILED with the error message
         logger.warn("Marking AI job as FAILED");
@@ -215,6 +233,35 @@ export async function runAiSummarize(
 
         throw err;
     }
+}
+
+export async function markDocumentProcessingForSummarize(
+    documentUuid: string,
+    userId: string,
+): Promise<void> {
+    const user = await prisma.user.findUnique({
+        where: { uuid: userId },
+        select: { id: true },
+    });
+    if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
+
+    const doc = await prisma.document.findUnique({ where: { uuid: documentUuid } });
+    if (!doc || doc.deletedAt) {
+        throw Object.assign(new Error("Document not found"), { statusCode: 404 });
+    }
+    if (doc.ownerUserId !== user.id) {
+        throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+    }
+
+    await prisma.document.update({
+        where: { id: doc.id },
+        data: {
+            status: "PROCESSING",
+            updatedAt: new Date(),
+        },
+    });
+
+    await invalidateDocumentListCacheForUser(userId).catch(() => {});
 }
 
 // ── Job status ────────────────────────────────────────────────────────────────

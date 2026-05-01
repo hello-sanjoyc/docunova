@@ -23,6 +23,7 @@
  */
 
 import { Suspense, useState, type FormEvent, type FocusEvent } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
@@ -229,45 +230,13 @@ function SignupPageInner() {
                 className="flex items-center gap-2 mb-10"
                 aria-label="DocuNova AI home"
             >
-                <svg
-                    width="26"
-                    height="26"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    className="text-amber"
-                >
-                    <rect
-                        x="3"
-                        y="2"
-                        width="13"
-                        height="17"
-                        rx="2"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                    />
-                    <path
-                        d="M7 7h6M7 10h6M7 13h4"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                    />
-                    <circle
-                        cx="18"
-                        cy="17"
-                        r="4"
-                        fill="#F5E6CC"
-                        stroke="#C8852A"
-                        strokeWidth="1.5"
-                    />
-                    <path
-                        d="M16.5 17l1 1 2-2"
-                        stroke="#C8852A"
-                        strokeWidth="1.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    />
-                </svg>
-                <span className="font-medium text-ink text-[15px] tracking-tight">
+                <Image
+                    src="/logo.png"
+                    alt="DocuNova AI logo"
+                    width={32}
+                    height={32}
+                />
+                <span className="font-medium text-ink text-xl tracking-tight">
                     DocuNova{" "}
                     <span className="text-amber font-semibold">AI</span>
                 </span>
@@ -279,7 +248,7 @@ function SignupPageInner() {
                     Create your account
                 </h1>
                 <p className="text-[14px] text-muted mb-8">
-                    Start with 3 free contract briefs — no credit card required.
+                    Start with 50 free pages — no credit card required.
                 </p>
 
                 {oauthMessage && (

@@ -120,6 +120,8 @@ CREATE TABLE IF NOT EXISTS users (
     phone               VARCHAR(30),
     avatar_url          TEXT,
     email_verified_at   TIMESTAMPTZ(6),
+    email_digest_enabled    BOOLEAN        NOT NULL DEFAULT true,
+    security_alerts_enabled BOOLEAN        NOT NULL DEFAULT true,
     two_factor_enabled  BOOLEAN        NOT NULL DEFAULT false,
     two_factor_secret   TEXT,
     status              user_status    NOT NULL DEFAULT 'active',
@@ -201,7 +203,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     device_type          VARCHAR(50),
     browser              VARCHAR(100),
     os                   VARCHAR(100),
-    ip_address           INET,
+    ip_address           VARCHAR(45),
     user_agent           TEXT,
     status               session_status NOT NULL DEFAULT 'active',
     last_seen_at         TIMESTAMPTZ(6),
@@ -356,6 +358,12 @@ CREATE INDEX IF NOT EXISTS idx_ai_jobs_type        ON ai_jobs (job_type);
 CREATE INDEX IF NOT EXISTS idx_ai_jobs_input_gin   ON ai_jobs USING GIN (input_json);
 CREATE INDEX IF NOT EXISTS idx_ai_jobs_output_gin  ON ai_jobs USING GIN (output_json);
 
+-- ocr_status enum ---------------------------------------------------
+DO $$ BEGIN
+    CREATE TYPE ocr_status AS ENUM ('pending', 'processing', 'completed', 'failed', 'skipped');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- document_ocr_results ----------------------------------------------
 CREATE TABLE IF NOT EXISTS document_ocr_results (
     id                 BIGSERIAL      PRIMARY KEY,
@@ -365,11 +373,18 @@ CREATE TABLE IF NOT EXISTS document_ocr_results (
     page_text_json     JSONB          NOT NULL DEFAULT '[]'::jsonb,
     confidence_score   NUMERIC(5, 2),
     language_detected  VARCHAR(20),
+    ocr_status         ocr_status     NOT NULL DEFAULT 'pending',
+    ocr_method         VARCHAR(50),
     created_at         TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
     CONSTRAINT uq_document_ocr_result UNIQUE (document_id)
 );
 CREATE INDEX IF NOT EXISTS idx_ocr_doc ON document_ocr_results (document_id);
+
+-- Migration: add ocr_status / ocr_method to existing installations
+ALTER TABLE document_ocr_results
+    ADD COLUMN IF NOT EXISTS ocr_status ocr_status NOT NULL DEFAULT 'pending',
+    ADD COLUMN IF NOT EXISTS ocr_method VARCHAR(50);
 
 -- document_ai_summaries ---------------------------------------------
 CREATE TABLE IF NOT EXISTS document_ai_summaries (
@@ -412,3 +427,57 @@ CREATE TABLE IF NOT EXISTS search_history (
 );
 CREATE INDEX IF NOT EXISTS idx_search_history_user_time ON search_history (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_search_history_org_time  ON search_history (organization_id, created_at DESC);
+
+-- ---------------------------------------------------------------------
+-- Part 4. Role normalization (admin/member only)
+-- ---------------------------------------------------------------------
+
+-- Ensure system roles exist for every organization.
+INSERT INTO roles (organization_id, name, code, is_system)
+SELECT o.id, 'Admin', 'admin', true
+FROM organizations o
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM roles r
+    WHERE r.organization_id = o.id
+      AND r.code = 'admin'
+);
+
+INSERT INTO roles (organization_id, name, code, is_system)
+SELECT o.id, 'Member', 'member', true
+FROM organizations o
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM roles r
+    WHERE r.organization_id = o.id
+      AND r.code = 'member'
+);
+
+-- Repoint legacy role assignments on organization members.
+UPDATE organization_members om
+SET role_id = target.id,
+    updated_at = now()
+FROM roles legacy
+JOIN roles target
+    ON target.organization_id = legacy.organization_id
+   AND (
+        (legacy.code = 'owner' AND target.code = 'admin')
+        OR
+        (legacy.code = 'viewer' AND target.code = 'member')
+   )
+WHERE om.role_id = legacy.id;
+
+-- Repoint legacy invitation role codes.
+UPDATE organization_invitations
+SET role_code = 'admin',
+    updated_at = now()
+WHERE lower(role_code) = 'owner';
+
+UPDATE organization_invitations
+SET role_code = 'member',
+    updated_at = now()
+WHERE lower(role_code) = 'viewer';
+
+-- Remove legacy roles.
+DELETE FROM roles
+WHERE code IN ('owner', 'viewer');

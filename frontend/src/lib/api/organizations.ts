@@ -4,10 +4,8 @@ import { API_ENDPOINTS } from "./endpoints";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type OrganizationRoleCode =
-    | "owner"
     | "admin"
-    | "member"
-    | "viewer";
+    | "member";
 
 export type MemberStatus = "ACTIVE" | "INVITED" | "DISABLED" | "REMOVED";
 

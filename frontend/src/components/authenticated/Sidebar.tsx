@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -10,6 +11,7 @@ import {
     LogOut,
     Settings,
     Bell,
+    CreditCard,
     FileText,
     Trash2,
     Users,
@@ -44,6 +46,11 @@ const navItems = [
         href: "/team",
         label: "Team",
         icon: <Users size={16} strokeWidth={1.8} aria-hidden="true" />,
+    },
+    {
+        href: "/billing",
+        label: "Subscription",
+        icon: <CreditCard size={16} strokeWidth={1.8} aria-hidden="true" />,
     },
     {
         href: "/trash",
@@ -88,9 +95,11 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
         >
             <div className="h-16 bg-cream border-b border-border px-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <img
+                    <Image
                         src="/logo.png"
                         alt="DocuNova AI logo"
+                        width={48}
+                        height={48}
                         className="h-12 w-auto"
                     />
                     <span className="font-medium text-ink text-[24px] tracking-tight">

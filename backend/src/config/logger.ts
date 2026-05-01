@@ -52,6 +52,15 @@ const fileTransports: winston.transport[] = [
     }),
 ];
 
+const redisLogTransport = new DailyRotateFile({
+    ...rotateDefaults,
+    level: "info",
+    dirname: logDir,
+    filename: "redis-%DATE%.log",
+    format: jsonFormat,
+    auditFile: path.join(logDir, ".redis-audit.json"),
+});
+
 const exceptionFileTransport = new DailyRotateFile({
     ...rotateDefaults,
     dirname: logDir,
@@ -90,6 +99,13 @@ export const appLogger = winston.createLogger({
     transports: fileTransports,
     exceptionHandlers: [exceptionFileTransport],
     rejectionHandlers: [rejectionFileTransport],
+    exitOnError: false,
+});
+
+export const redisLogger = winston.createLogger({
+    level: "info",
+    defaultMeta: { service: "backend", env: env.NODE_ENV, context: "redis-command" },
+    transports: [redisLogTransport],
     exitOnError: false,
 });
 

@@ -4,6 +4,24 @@ import { apiClient } from "./client";
 import { apiRequest } from "./request";
 import { toApiError } from "./errors";
 
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+    "pdf",
+    "docx",
+    "jpg",
+    "jpeg",
+    "png",
+]);
+
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/jpg",
+    "image/jpeg",
+    "image/png",
+]);
+
+const ALLOWED_UPLOAD_LABEL = "PDF / DOCX / JPG / JPEG / PNG";
+
 export type DocumentStatus =
     | "UPLOADED"
     | "PROCESSING"
@@ -71,6 +89,11 @@ export interface SearchDocumentsResult extends PaginatedDocuments {
     };
 }
 
+export interface SummarizeJobResult {
+    jobId: string;
+    status: string;
+}
+
 export interface UploadDocumentPayload {
     file: File;
     title?: string;
@@ -83,6 +106,26 @@ export interface UpdateDocumentPayload {
     description?: string;
     folderId?: string | null;
     status?: "archived" | "trashed";
+}
+
+function getFileExtension(fileName: string) {
+    const lastDotIndex = fileName.lastIndexOf(".");
+    if (lastDotIndex < 0 || lastDotIndex === fileName.length - 1) return "";
+    return fileName.slice(lastDotIndex + 1).toLowerCase();
+}
+
+export function validateUploadFileType(file: File) {
+    const extension = getFileExtension(file.name);
+    const normalizedMime = file.type.trim().toLowerCase();
+
+    const hasAllowedExtension = ALLOWED_UPLOAD_EXTENSIONS.has(extension);
+    const hasAllowedMime = normalizedMime
+        ? ALLOWED_UPLOAD_MIME_TYPES.has(normalizedMime)
+        : false;
+
+    if (!hasAllowedExtension && !hasAllowedMime) {
+        throw new Error(`Unsupported file type. Allowed: ${ALLOWED_UPLOAD_LABEL}.`);
+    }
 }
 
 export function listDocuments(query: ListDocumentsQuery = {}) {
@@ -110,6 +153,8 @@ export function searchDocuments(payload: SearchDocumentsPayload) {
 }
 
 export function uploadDocument(payload: UploadDocumentPayload) {
+    validateUploadFileType(payload.file);
+
     const formData = new FormData();
     formData.append("file", payload.file);
 
@@ -124,6 +169,13 @@ export function uploadDocument(payload: UploadDocumentPayload) {
         headers: {
             "Content-Type": "multipart/form-data",
         },
+    });
+}
+
+export function triggerDocumentSummary(documentId: string) {
+    return apiRequest<SummarizeJobResult>({
+        method: "POST",
+        url: API_ENDPOINTS.AI.SUMMARIZE(documentId),
     });
 }
 

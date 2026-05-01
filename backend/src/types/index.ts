@@ -1,7 +1,9 @@
+import { AppRole } from "../utils/roles";
+
 export interface JwtPayload {
   userId: string;
   email: string;
-  role: string;
+  role: AppRole;
 }
 
 export interface ApiResponse<T = unknown> {

@@ -26,6 +26,7 @@ import {
 import { API_BASE_URL } from "@/lib/api/client";
 import {
     listDocuments,
+    triggerDocumentSummary,
     uploadDocument,
     type DocumentItem,
 } from "@/lib/api/documents";
@@ -45,6 +46,20 @@ const DOC_TYPES = [
     "SaaS terms",
 ];
 
+type SummaryRow = {
+    label: string;
+    value: string;
+    tone?: "red" | "green";
+};
+
+function summaryCardStatus(
+    status: string | null | undefined,
+): "PROCESSING" | "READY" | "FAILED" {
+    if (status === "READY") return "READY";
+    if (status === "FAILED") return "FAILED";
+    return "PROCESSING";
+}
+
 export default function DocumentsNewPageClient() {
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,6 +73,10 @@ export default function DocumentsNewPageClient() {
     const [dropActive, setDropActive] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareUrl, setShareUrl] = useState("");
+    const [uploadState, setUploadState] = useState<
+        "idle" | "uploading" | "uploadFailed"
+    >("idle");
+    const [retryingSummary, setRetryingSummary] = useState(false);
 
     const fetchLatestDocument = useCallback(async () => {
         setLoading(true);
@@ -83,48 +102,65 @@ export default function DocumentsNewPageClient() {
         void fetchLatestDocument();
     }, [fetchLatestDocument]);
 
-    useEffect(() => {
-        const isProcessing = latestDocument?.status === "PROCESSING";
-        if (!isProcessing) return;
-
-        const interval = setInterval(() => void fetchLatestDocument(), 6_000);
-        return () => clearInterval(interval);
-    }, [latestDocument?.status, fetchLatestDocument]);
-
     const latestMetadata = useMemo(
         () => toMetadataRecord(latestDocument?.metadataJson ?? null),
         [latestDocument],
     );
+    const latestStatus = summaryCardStatus(latestDocument?.status);
+
+    useEffect(() => {
+        const isProcessing =
+            Boolean(latestDocument) && latestStatus === "PROCESSING";
+        if (!isProcessing) return;
+
+        const interval = setInterval(() => void fetchLatestDocument(), 6_000);
+        return () => clearInterval(interval);
+    }, [latestDocument, latestStatus, fetchLatestDocument]);
 
     const latestParties = metadataText(
         latestMetadata,
         ["parties", "partyNames"],
-        "Summary will be available once parsing completes.",
+        "",
     );
     const latestEffectiveDate = metadataText(
         latestMetadata,
         ["effectiveDate", "dateRange", "term"],
-        "-",
+        "",
     );
     const latestObligations = metadataText(
         latestMetadata,
         ["obligations", "keyObligations"],
-        "-",
+        "",
+    );
+    const latestIndemnity = metadataText(
+        latestMetadata,
+        ["indemnity"],
+        "",
+    );
+    const latestIP = metadataText(
+        latestMetadata,
+        ["IP", "ip"],
+        "",
+    );
+    const latestConfidentiality = metadataText(
+        latestMetadata,
+        ["confidentiality"],
+        "",
     );
     const latestPayment = metadataText(
         latestMetadata,
         ["payment", "paymentTerms"],
-        "-",
+        "",
     );
     const latestRedFlags = metadataText(
         latestMetadata,
         ["redFlags", "riskFlags", "risks"],
-        "No red flags identified yet.",
+        "",
     );
     const latestActions = metadataText(
         latestMetadata,
         ["actions", "recommendedActions", "nextActions"],
-        "No follow-up actions yet.",
+        "",
     );
     const latestAiSummary = metadataText(
         latestMetadata,
@@ -137,6 +173,40 @@ export default function DocumentsNewPageClient() {
         "",
     );
     const latestSnippet = latestAiSummary || latestTextSnippet;
+    const latestSummaryRows = useMemo(
+        () =>
+            [
+                { label: "PARTIES", value: latestParties },
+                {
+                    label: "EFFECTIVE DATE",
+                    value: latestEffectiveDate,
+                },
+                {
+                    label: "OBLIGATIONS",
+                    value: latestObligations,
+                },
+                { label: "INDEMNITY", value: latestIndemnity },
+                { label: "IP", value: latestIP },
+                {
+                    label: "CONFIDENTIALITY",
+                    value: latestConfidentiality,
+                },
+                { label: "PAYMENT", value: latestPayment },
+                { label: "RED FLAGS", value: latestRedFlags, tone: "red" },
+                { label: "ACTIONS", value: latestActions, tone: "green" },
+            ].filter((row): row is SummaryRow => Boolean(row.value.trim())),
+        [
+            latestParties,
+            latestEffectiveDate,
+            latestObligations,
+            latestIndemnity,
+            latestIP,
+            latestConfidentiality,
+            latestPayment,
+            latestRedFlags,
+            latestActions,
+        ],
+    );
     const latestPageCount = useMemo(() => {
         const raw = latestMetadata.pageCount;
         if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
@@ -151,8 +221,17 @@ export default function DocumentsNewPageClient() {
     }, [latestMetadata]);
     const latestProcessedText = useMemo(() => {
         if (!latestDocument) return "";
-        if (latestDocument.status === "PROCESSING") return "Processing...";
-        if (latestDocument.status === "READY") {
+        if (latestStatus === "PROCESSING") return "Processing...";
+        if (latestStatus === "READY") {
+            // Prefer the authoritative value stored by the AI worker (covers full pipeline: upload + OCR + AI)
+            const stored = latestMetadata.processingTime;
+            if (typeof stored === "string" && stored) return `Processed in ${stored}`;
+
+            const storedSeconds = latestMetadata.processingTimeSeconds;
+            if (typeof storedSeconds === "number" && storedSeconds > 0)
+                return `Processed in ${storedSeconds}s`;
+
+            // Fallback: derive from document timestamps
             const uploadedAt = new Date(latestDocument.uploadedAt).getTime();
             const updatedAt = new Date(latestDocument.updatedAt).getTime();
             if (
@@ -168,8 +247,8 @@ export default function DocumentsNewPageClient() {
             }
             return "Processed";
         }
-        return latestDocument.status;
-    }, [latestDocument]);
+        return latestStatus;
+    }, [latestDocument, latestStatus, latestMetadata]);
     const latestMetaLine = [
         latestPageCount
             ? `${latestPageCount} page${latestPageCount === 1 ? "" : "s"}`
@@ -179,15 +258,24 @@ export default function DocumentsNewPageClient() {
         .filter(Boolean)
         .join(" · ");
     const canUploadAnother =
-        !latestDocument || latestDocument.status === "READY";
+        !latestDocument ||
+        latestDocument.status === "READY" ||
+        latestDocument.status === "FAILED";
 
     async function uploadFromFile(file: File) {
+        setUploadState("uploading");
         setUploading(true);
         try {
-            await uploadDocument({ file });
+            const document = await uploadDocument({ file });
+            setLatestDocument({
+                ...document,
+                status: summaryCardStatus(document.status),
+            });
+            setUploadState("idle");
             toast.success("Document uploaded");
             await fetchLatestDocument();
         } catch (error) {
+            setUploadState("uploadFailed");
             toast.error(formatApiError(error));
         } finally {
             setUploading(false);
@@ -239,6 +327,9 @@ export default function DocumentsNewPageClient() {
                 parties: latestParties,
                 effectiveDate: latestEffectiveDate,
                 obligations: latestObligations,
+                indemnity: latestIndemnity,
+                IP: latestIP,
+                confidentiality: latestConfidentiality,
                 payment: latestPayment,
                 redFlags: latestRedFlags,
                 actions: latestActions,
@@ -258,6 +349,28 @@ export default function DocumentsNewPageClient() {
     async function handleOpenShareModal() {
         setShowShareModal(true);
         await ensureShareUrl();
+    }
+
+    async function handleGenerateSummaryAgain() {
+        if (!latestDocument) return;
+        setRetryingSummary(true);
+        try {
+            await triggerDocumentSummary(latestDocument.id);
+            setLatestDocument((current) =>
+                current
+                    ? {
+                          ...current,
+                          status: "PROCESSING",
+                      }
+                    : current,
+            );
+            await fetchLatestDocument();
+            toast.success("Summary generation started");
+        } catch (error) {
+            toast.error(formatApiError(error));
+        } finally {
+            setRetryingSummary(false);
+        }
     }
 
     async function handleCopyShareLink() {
@@ -384,7 +497,7 @@ export default function DocumentsNewPageClient() {
                     <input
                         ref={uploadInputRef}
                         type="file"
-                        accept=".pdf,.docx"
+                        accept=".pdf,.docx,.jpg,.jpeg,.png"
                         className="hidden"
                         onChange={handleUploadChange}
                     />
@@ -419,7 +532,8 @@ export default function DocumentsNewPageClient() {
                             Drop your contract here
                         </p>
                         <p className="mb-6 mt-2 text-sm text-[#958b80]">
-                            PDF or DOCX - up to 50 pages
+                            Supports PDF / DOCX / JPG / JPEG / PNG - up to 50
+                            pages
                         </p>
                         <button
                             type="button"
@@ -458,28 +572,66 @@ export default function DocumentsNewPageClient() {
                             </span>
                         ))}
                     </div>
+
+                    <div className="mt-5 flex justify-center text-sm text-[#9f3f3f]">
+                        AI-generated summary is provided 'as is' and may contain
+                        errors or omissions. We do not guarantee its accuracy.
+                        Users should independently verify all information.
+                    </div>
                 </div>
 
-                <article className="min-h-[540px] overflow-hidden rounded-[28px] border border-[#ddd5cb] bg-[#f8f6f2]">
+                <article className="min-h-[360px] overflow-hidden rounded-[28px] border border-[#ddd5cb] bg-[#f8f6f2]">
                     {loading ? (
-                        <div className="animate-pulse p-6">
-                            <div className="flex items-center justify-between">
-                                <div className="h-8 w-72 rounded bg-[#e8e2d7]" />
-                                <div className="h-10 w-24 rounded-full bg-[#ebe5da]" />
+                        <div className="animate-pulse">
+                            <div className="flex items-center justify-between gap-4 border-b border-[#ddd5cb] p-4">
+                                <div className="flex min-w-0 items-center gap-4">
+                                    <div className="h-14 w-14 shrink-0 rounded-2xl bg-[#e9e2d7]" />
+                                    <div className="min-w-0">
+                                        <div className="h-4 w-56 rounded bg-[#e3dccf]" />
+                                        <div className="mt-3 h-3 w-36 rounded bg-[#ece5da]" />
+                                    </div>
+                                </div>
+                                <div className="h-9 w-24 rounded-full bg-[#ebe5da]" />
                             </div>
-                            <div className="mt-8 space-y-4">
-                                {Array.from({ length: 6 }).map((_, index) => (
+
+                            <div className="divide-y divide-[#ddd5cb] px-4">
+                                {Array.from({ length: 7 }).map((_, index) => (
                                     <div
                                         key={`summary-skeleton-${index}`}
-                                        className="h-14 w-full rounded bg-[#eee8de]"
-                                    />
+                                        className={`grid grid-cols-1 gap-4 py-3 md:grid-cols-[33%_67%] ${index === 4 ? "border-l-4 border-[#ecd7d2] bg-[#f7efed] px-2" : ""} ${index === 5 ? "border-l-4 border-[#d8e8df] bg-[#eff6f2] px-2" : ""}`}
+                                    >
+                                        <div className="h-3 w-20 rounded bg-[#e1dacd]" />
+                                        <div className="h-3 w-full rounded bg-[#e9e2d7]" />
+                                    </div>
                                 ))}
+                            </div>
+
+                            <div className="border-t border-[#ddd5cb] p-6">
+                                <div className="flex items-center gap-4">
+                                    <div className="h-11 w-28 rounded-xl bg-[#ebe4d9]" />
+                                    <div className="h-11 w-24 rounded-xl bg-[#efe8dd]" />
+                                </div>
                             </div>
                         </div>
                     ) : !latestDocument ? (
                         <div className="flex h-full items-center justify-center p-8 text-center text-[#7c7369]">
-                            Upload a document to generate your structured
-                            summary.
+                            {uploadState === "uploading" ? (
+                                <div className="space-y-3">
+                                    <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[#d7c6ad] border-t-[#c8852a]" />
+                                    <p className="text-sm font-medium tracking-[0.14em] text-[#7c7369]">
+                                        UPLOADING
+                                    </p>
+                                </div>
+                            ) : uploadState === "uploadFailed" ? (
+                                <p className="text-sm font-medium tracking-[0.08em] text-[#b03a2e]">
+                                    Unable to upload
+                                </p>
+                            ) : (
+                                <p className="text-sm font-medium tracking-[0.04em] text-[#7c7369]">
+                                    No document uploaded yet. Upload a file to
+                                    generate your summary.
+                                </p>
+                            )}
                         </div>
                     ) : (
                         <>
@@ -506,38 +658,60 @@ export default function DocumentsNewPageClient() {
                                 </div>
                                 <span
                                     className={`shrink-0 rounded-full px-5 py-2 text-sm leading-none font-medium ${
-                                        latestDocument.status === "READY"
+                                        latestStatus === "READY"
                                             ? "bg-[#dce9e2] text-[#2b5c49]"
-                                            : latestDocument.status ===
-                                                "PROCESSING"
+                                            : latestStatus === "PROCESSING"
                                               ? "bg-[#efe8ff] text-[#6a45b8]"
                                               : "bg-[#ece7df] text-[#6a6259]"
                                     }`}
                                 >
-                                    {latestDocument.status === "READY"
-                                        ? "Ready"
-                                        : latestDocument.status}
+                                    {latestStatus}
                                 </span>
                             </div>
 
                             <div className="divide-y divide-[#ddd5cb] text-[#2a2520]">
-                                {[
-                                    { label: "PARTIES", value: latestParties },
-                                    {
-                                        label: "EFFECTIVE DATE",
-                                        value: latestEffectiveDate,
-                                    },
-                                    {
-                                        label: "OBLIGATIONS",
-                                        value: latestObligations,
-                                    },
-                                    { label: "PAYMENT", value: latestPayment },
-                                ].map((row) => (
+                                {latestSummaryRows.length === 0 &&
+                                    !latestSnippet && (
+                                        <div className="px-4 py-8 text-center text-sm font-medium tracking-[0.04em] text-[#7c7369]">
+                                            Summary will be available once
+                                            parsing completes.
+                                        </div>
+                                    )}
+
+                                {latestSummaryRows.map((row) => (
                                     <div
                                         key={row.label}
-                                        className="grid grid-cols-1 gap-4 px-4 py-3 md:grid-cols-[33%_67%]"
+                                        className={`grid grid-cols-1 gap-4 px-4 py-3 md:grid-cols-[33%_67%] ${
+                                            row.tone === "red"
+                                                ? "border-l-4 border-[#ce5c45] bg-[#fdf5f3]"
+                                                : row.tone === "green"
+                                                  ? "border-l-4 border-[#4d9a74] bg-[#f2f8f5]"
+                                                  : ""
+                                        }`}
                                     >
-                                        <p className="text-[14px] font-medium tracking-[0.08em] text-[#8c847a]">
+                                        <p
+                                            className={`text-[14px] font-medium tracking-[0.08em] ${
+                                                row.tone === "red"
+                                                    ? "inline-flex items-center gap-2 text-[#c74a35]"
+                                                    : row.tone === "green"
+                                                      ? "inline-flex items-center gap-2 text-[#3f7f61]"
+                                                      : "text-[#8c847a]"
+                                            }`}
+                                        >
+                                            {row.tone === "red" && (
+                                                <AlertTriangle
+                                                    size={18}
+                                                    strokeWidth={1.8}
+                                                    aria-hidden="true"
+                                                />
+                                            )}
+                                            {row.tone === "green" && (
+                                                <Check
+                                                    size={18}
+                                                    strokeWidth={2}
+                                                    aria-hidden="true"
+                                                />
+                                            )}
                                             {row.label}
                                         </p>
                                         <p className="text-[14px] leading-[1.28] text-[#1f1b17]">
@@ -545,34 +719,6 @@ export default function DocumentsNewPageClient() {
                                         </p>
                                     </div>
                                 ))}
-
-                                <div className="grid grid-cols-1 gap-4 border-l-4 border-[#ce5c45] bg-[#fdf5f3] px-4 py-3 md:grid-cols-[33%_67%]">
-                                    <p className="inline-flex items-center gap-2 text-[14px] font-medium tracking-[0.08em] text-[#c74a35]">
-                                        <AlertTriangle
-                                            size={18}
-                                            strokeWidth={1.8}
-                                            aria-hidden="true"
-                                        />
-                                        RED FLAGS
-                                    </p>
-                                    <p className="text-[14px] leading-[1.28] text-[#1f1b17]">
-                                        {latestRedFlags}
-                                    </p>
-                                </div>
-
-                                <div className="grid grid-cols-1 gap-4 border-l-4 border-[#4d9a74] bg-[#f2f8f5] px-4 py-3 md:grid-cols-[33%_67%]">
-                                    <p className="inline-flex items-center gap-2 text-[14px] font-medium tracking-[0.08em] text-[#3f7f61]">
-                                        <Check
-                                            size={18}
-                                            strokeWidth={2}
-                                            aria-hidden="true"
-                                        />
-                                        ACTIONS
-                                    </p>
-                                    <p className="text-[14px] leading-[1.28] text-[#1f1b17]">
-                                        {latestActions}
-                                    </p>
-                                </div>
 
                                 {latestSnippet && (
                                     <div className="grid grid-cols-1 gap-4 px-4 py-3 md:grid-cols-[33%_67%]">
@@ -588,40 +734,57 @@ export default function DocumentsNewPageClient() {
                                 )}
                             </div>
 
-                            <div className="flex items-center gap-4 border-t border-[#ddd5cb] p-6">
-                                <button
-                                    type="button"
-                                    onClick={handleDownloadSummaryPdf}
-                                    className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#dfd8ce] bg-white px-4 text-sm font-medium text-[#27231f] disabled:opacity-50"
-                                >
-                                    <Download size={20} strokeWidth={2} />
-                                    Summary
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleOpenShareModal}
-                                    className="inline-flex h-14 items-center gap-2 rounded-2xl px-2 text-[14px] leading-none text-[#8f857a] disabled:opacity-100"
-                                >
-                                    <Share2 size={20} strokeWidth={2} />
-                                    Share link
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={
-                                        busyDocumentId === latestDocument.id
-                                    }
-                                    onClick={() =>
-                                        handleDownload(
-                                            latestDocument.id,
-                                            latestDocument.originalFilename,
-                                        )
-                                    }
-                                    className="ml-auto inline-flex h-11 items-center gap-2 rounded-xl border border-[#dfd8ce] bg-white px-4 text-sm font-medium text-[#27231f] disabled:opacity-50"
-                                >
-                                    <FileText size={15} strokeWidth={2} />
-                                    Original
-                                </button>
-                            </div>
+                            {latestStatus === "READY" && (
+                                <div className="flex items-center gap-4 border-t border-[#ddd5cb] p-6">
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadSummaryPdf}
+                                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#dfd8ce] bg-white px-4 text-sm font-medium text-[#27231f] disabled:opacity-50"
+                                    >
+                                        <Download size={20} strokeWidth={2} />
+                                        Summary
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleOpenShareModal}
+                                        className="inline-flex h-14 items-center gap-2 rounded-2xl px-2 text-[14px] leading-none text-[#8f857a] disabled:opacity-100"
+                                    >
+                                        <Share2 size={20} strokeWidth={2} />
+                                        Share link
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={
+                                            busyDocumentId === latestDocument.id
+                                        }
+                                        onClick={() =>
+                                            handleDownload(
+                                                latestDocument.id,
+                                                latestDocument.originalFilename,
+                                            )
+                                        }
+                                        className="ml-auto inline-flex h-11 items-center gap-2 rounded-xl border border-[#dfd8ce] bg-white px-4 text-sm font-medium text-[#27231f] disabled:opacity-50"
+                                    >
+                                        <FileText size={15} strokeWidth={2} />
+                                        Download Original
+                                    </button>
+                                </div>
+                            )}
+
+                            {latestStatus === "FAILED" && (
+                                <div className="border-t border-[#ddd5cb] p-6">
+                                    <button
+                                        type="button"
+                                        disabled={retryingSummary}
+                                        onClick={handleGenerateSummaryAgain}
+                                        className="inline-flex h-11 items-center rounded-xl border border-[#dfd8ce] bg-white px-4 text-sm font-medium text-[#27231f] disabled:opacity-60"
+                                    >
+                                        {retryingSummary
+                                            ? "Generating..."
+                                            : "Generate Summary Again"}
+                                    </button>
+                                </div>
+                            )}
                         </>
                     )}
                 </article>

@@ -4,14 +4,17 @@ import { downloadDocumentFile, type DocumentItem } from "@/lib/api/documents";
 import { formatApiError } from "@/lib/api/errors";
 
 export interface SummaryPdfContent {
-    parties?: string;
-    effectiveDate?: string;
-    obligations?: string;
-    payment?: string;
-    redFlags?: string;
-    actions?: string;
-    summary?: string;
-    summaryLabel?: string;
+    parties?: string | null;
+    effectiveDate?: string | null;
+    obligations?: string | null;
+    indemnity?: string | null;
+    IP?: string | null;
+    confidentiality?: string | null;
+    payment?: string | null;
+    redFlags?: string | null;
+    actions?: string | null;
+    summary?: string | null;
+    summaryLabel?: string | null;
 }
 
 interface BusyActionInput {
@@ -86,8 +89,9 @@ export function metadataText(
     }
 
     for (const key of keys) {
+        if (!Object.prototype.hasOwnProperty.call(metadata, key)) continue;
         const normalized = formatValue(metadata[key]);
-        if (normalized) return normalized;
+        return normalized || fallback;
     }
     return fallback;
 }
@@ -120,41 +124,56 @@ function buildSummaryContent(
     overrides?: SummaryPdfContent,
 ) {
     const metadata = toMetadataRecord(document.metadataJson);
+    const cleanText = (value: unknown): string | undefined => {
+        if (typeof value !== "string") return undefined;
+        const trimmed = value.trim();
+        return trimmed || undefined;
+    };
+    const resolveText = (
+        override: string | null | undefined,
+        keys: string[],
+    ) => {
+        if (override !== undefined) return cleanText(override);
+        return cleanText(metadataText(metadata, keys, ""));
+    };
     const derivedSummary = metadataText(
         metadata,
         ["summary", "aiSummary", "textSnippet", "textPreview", "extractedText"],
-        "Summary is not available yet.",
+        "",
     );
 
     return {
-        parties:
-            overrides?.parties ??
-            metadataText(metadata, ["parties", "partyNames"], "-"),
-        effectiveDate:
-            overrides?.effectiveDate ??
-            metadataText(metadata, ["effectiveDate", "dateRange", "term"], "-"),
-        obligations:
-            overrides?.obligations ??
-            metadataText(metadata, ["obligations", "keyObligations"], "-"),
-        payment:
-            overrides?.payment ??
-            metadataText(metadata, ["payment", "paymentTerms"], "-"),
-        redFlags:
-            overrides?.redFlags ??
-            metadataText(
-                metadata,
-                ["redFlags", "riskFlags", "risks"],
-                "No red flags identified.",
-            ),
-        actions:
-            overrides?.actions ??
-            metadataText(
-                metadata,
-                ["actions", "recommendedActions", "nextActions"],
-                "No follow-up actions available.",
-            ),
-        summary: overrides?.summary ?? derivedSummary,
-        summaryLabel: overrides?.summaryLabel ?? "Summary",
+        parties: resolveText(overrides?.parties, ["parties", "partyNames"]),
+        effectiveDate: resolveText(overrides?.effectiveDate, [
+            "effectiveDate",
+            "dateRange",
+            "term",
+        ]),
+        obligations: resolveText(overrides?.obligations, [
+            "obligations",
+            "keyObligations",
+        ]),
+        indemnity: resolveText(overrides?.indemnity, ["indemnity"]),
+        IP: resolveText(overrides?.IP, ["IP", "ip"]),
+        confidentiality: resolveText(overrides?.confidentiality, [
+            "confidentiality",
+        ]),
+        payment: resolveText(overrides?.payment, ["payment", "paymentTerms"]),
+        redFlags: resolveText(overrides?.redFlags, [
+            "redFlags",
+            "riskFlags",
+            "risks",
+        ]),
+        actions: resolveText(overrides?.actions, [
+            "actions",
+            "recommendedActions",
+            "nextActions",
+        ]),
+        summary:
+            overrides?.summary !== undefined
+                ? cleanText(overrides.summary)
+                : cleanText(derivedSummary),
+        summaryLabel: cleanText(overrides?.summaryLabel) ?? "Summary",
     };
 }
 
@@ -188,32 +207,47 @@ export function handleDownloadSummaryPdf({
             previewBg: [251, 249, 245] as const,
         };
 
-        const rowItems: Array<{
+        type SummaryPdfRow = {
             label: string;
             value: string;
             bg?: readonly [number, number, number];
             accent?: readonly [number, number, number];
             labelColor?: readonly [number, number, number];
-        }> = [
-            { label: "Parties", value: pdfContent.parties || "-" },
-            { label: "Effective Date", value: pdfContent.effectiveDate || "-" },
-            { label: "Obligations", value: pdfContent.obligations || "-" },
-            { label: "Payment", value: pdfContent.payment || "-" },
-            {
-                label: "Red Flags",
-                value: pdfContent.redFlags || "No red flags identified.",
-                bg: c.redBg,
-                accent: c.redAccent,
-                labelColor: [195, 74, 53],
-            },
-            {
-                label: "Actions",
-                value: pdfContent.actions || "No follow-up actions available.",
-                bg: c.greenBg,
-                accent: c.greenAccent,
-                labelColor: [63, 127, 97],
-            },
+        };
+        type SummaryPdfCandidate = Omit<SummaryPdfRow, "value"> & {
+            value?: string;
+        };
+
+        const rowCandidates: Array<SummaryPdfCandidate | null> = [
+            { label: "Parties", value: pdfContent.parties },
+            { label: "Effective Date", value: pdfContent.effectiveDate },
+            { label: "Obligations", value: pdfContent.obligations },
+            { label: "Indemnity", value: pdfContent.indemnity },
+            { label: "IP", value: pdfContent.IP },
+            { label: "Confidentiality", value: pdfContent.confidentiality },
+            { label: "Payment", value: pdfContent.payment },
+            pdfContent.redFlags
+                ? {
+                      label: "Red Flags",
+                      value: pdfContent.redFlags,
+                      bg: c.redBg,
+                      accent: c.redAccent,
+                      labelColor: [195, 74, 53] as const,
+                  }
+                : null,
+            pdfContent.actions
+                ? {
+                      label: "Actions",
+                      value: pdfContent.actions,
+                      bg: c.greenBg,
+                      accent: c.greenAccent,
+                      labelColor: [63, 127, 97] as const,
+                  }
+                : null,
         ];
+        const rowItems = rowCandidates.filter(
+            (row): row is SummaryPdfRow => Boolean(row?.value?.trim()),
+        );
 
         if (pdfContent.summary) {
             rowItems.push({

@@ -27,6 +27,7 @@ export interface UploadDocumentInput extends UploadDocumentFields {
     buffer: Buffer;
     pageCount: number;
     extractedText: string;
+    needsOcr: boolean;
     classification: {
         key: string;
         label: string;

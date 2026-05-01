@@ -25,8 +25,9 @@ import {
     TwoFactorLoginBody,
 } from "../models/auth.model";
 import { successResponse } from "../utils/response";
+import { AppRole } from "../utils/roles";
 
-function signAccessToken(request: FastifyRequest, user: { id: string; email: string; role: string }) {
+function signAccessToken(request: FastifyRequest, user: { id: string; email: string; role: AppRole }) {
     return request.server.jwt.sign({
         userId: user.id,
         email: user.email,
@@ -196,7 +197,7 @@ export async function me(request: FastifyRequest, reply: FastifyReply) {
 
 export async function twoFactorEnable(request: FastifyRequest, reply: FastifyReply) {
     const result = await initiate2FA(request.user.userId);
-    reply.send(successResponse("2FA enabled successfully", result));
+    reply.send(successResponse("2FA setup initiated", result));
 }
 
 export async function twoFactorVerify(
@@ -247,7 +248,7 @@ export async function googleStart(
             purpose: "google_oauth",
             source,
             target,
-        } as unknown as { userId: string; email: string; role: string },
+        } as unknown as import("../types").JwtPayload,
         { expiresIn: "10m" },
     );
 

@@ -21,6 +21,7 @@ export interface ValidatedDocumentUpload {
     checksumSha256: string;
     pageCount: number;
     extractedText: string;
+    needsOcr: boolean;
     classification: ClassificationResult;
     fields: { title?: string; description?: string; folderId?: string };
 }
@@ -37,11 +38,13 @@ const PDF_MIME = "application/pdf";
 const DOCX_MIME =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const DOC_MIME = "application/msword";
+const JPEG_MIME = "image/jpeg";
+const PNG_MIME = "image/png";
 
-const ALLOWED_MIMES = new Set([PDF_MIME, DOCX_MIME, DOC_MIME]);
-const ALLOWED_EXTENSIONS = new Set(["pdf", "docx", "doc"]);
+const ALLOWED_MIMES = new Set([PDF_MIME, DOCX_MIME, DOC_MIME, JPEG_MIME, PNG_MIME]);
+const ALLOWED_EXTENSIONS = new Set(["pdf", "docx", "doc", "jpg", "jpeg", "png"]);
 
-function detectKindByMagicBytes(buffer: Buffer): "pdf" | "docx" | "doc" | null {
+function detectKindByMagicBytes(buffer: Buffer): "pdf" | "docx" | "doc" | "jpeg" | "png" | null {
     if (buffer.length < 8) return null;
     // PDF: "%PDF-"
     if (buffer.slice(0, 5).toString() === "%PDF-") return "pdf";
@@ -65,6 +68,16 @@ function detectKindByMagicBytes(buffer: Buffer): "pdf" | "docx" | "doc" | null {
         buffer[7] === 0xe1
     )
         return "doc";
+    // JPEG: FF D8 FF
+    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "jpeg";
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (
+        buffer[0] === 0x89 &&
+        buffer[1] === 0x50 &&
+        buffer[2] === 0x4e &&
+        buffer[3] === 0x47
+    )
+        return "png";
     return null;
 }
 
@@ -140,7 +153,7 @@ export async function validateDocumentUpload(
         return reject(
             reply,
             415,
-            "Only PDF and MS Word (.doc, .docx) files are allowed",
+            "Only PDF, MS Word (.doc, .docx), JPEG, and PNG files are allowed",
         );
     }
 
@@ -149,7 +162,7 @@ export async function validateDocumentUpload(
         return reject(
             reply,
             415,
-            "File content does not match a supported PDF or MS Word format",
+            "File content does not match a supported format (PDF, Word, JPEG, or PNG)",
         );
     }
     if (detectedKind === "doc") {
@@ -160,6 +173,8 @@ export async function validateDocumentUpload(
             "Legacy .doc files are not supported. Please save as .docx or PDF and retry",
         );
     }
+
+    const isImage = detectedKind === "jpeg" || detectedKind === "png";
 
     // ── 2. Duplicate check by content hash ───────────────────────────────────
     const checksumSha256 = crypto
@@ -196,27 +211,35 @@ export async function validateDocumentUpload(
     // ── 3. Extract text + page count ─────────────────────────────────────────
     let pageCount = 0;
     let extractedText = "";
-    try {
-        if (detectedKind === "pdf") {
-            const pdf = await extractPdfData(buffer);
-            pageCount = pdf.pageCount;
-            extractedText = pdf.text;
-        } else {
-            const docx = await extractDocxData(buffer);
-            pageCount = docx.pageCount;
-            extractedText = docx.text;
+    let needsOcr = isImage;
+
+    if (!isImage) {
+        try {
+            if (detectedKind === "pdf") {
+                const pdf = await extractPdfData(buffer);
+                pageCount = pdf.pageCount;
+                extractedText = pdf.text;
+                // Scanned PDF: no selectable text — defer to Python OCR
+                if (!extractedText.trim()) needsOcr = true;
+            } else {
+                const docx = await extractDocxData(buffer);
+                pageCount = docx.pageCount;
+                extractedText = docx.text;
+            }
+        } catch (err) {
+            logger.error("Upload rejected: failed to parse document", { err });
+            return reject(
+                reply,
+                422,
+                "Unable to read the uploaded document. The file may be corrupted or password-protected",
+            );
         }
-    } catch (err) {
-        logger.error("Upload rejected: failed to parse document", { err });
-        return reject(
-            reply,
-            422,
-            "Unable to read the uploaded document. The file may be corrupted or password-protected",
-        );
+    } else {
+        pageCount = 1;
     }
 
     // ── 4. Page count limit ──────────────────────────────────────────────────
-    if (pageCount > env.MAX_DOCUMENT_PAGES) {
+    if (!isImage && pageCount > env.MAX_DOCUMENT_PAGES) {
         logger.warn("Upload rejected: page count exceeds limit", {
             pageCount,
             limit: env.MAX_DOCUMENT_PAGES,
@@ -229,7 +252,12 @@ export async function validateDocumentUpload(
     }
 
     // ── 5. Classification ────────────────────────────────────────────────────
-    const classification = classifyDocument(extractedText);
+    // Scanned / image documents have no text yet — use UNKNOWN placeholder and
+    // reclassify after OCR completes in the background worker.
+    const classification = needsOcr
+        ? { key: "UNKNOWN" as const, label: "Scanned Document", score: 0, matches: 0 }
+        : classifyDocument(extractedText);
+
     if (!classification) {
         logger.warn("Upload rejected: document not classifiable", {
             filename: fileFilename,
@@ -261,6 +289,7 @@ export async function validateDocumentUpload(
         checksumSha256,
         pageCount,
         extractedText,
+        needsOcr,
         classification,
         fields: {
             title: fields.title,

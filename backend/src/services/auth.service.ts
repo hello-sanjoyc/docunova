@@ -4,7 +4,13 @@ import prisma from "../config/prisma";
 import env from "../config/env";
 import { enqueueEmail } from "../queues/email.queue";
 import { comparePassword, hashPassword } from "../utils/hash";
-import { OrganizationRoleCode } from "../models/organization.model";
+import { toAppRole } from "../utils/roles";
+import {
+    ORGANIZATION_ROLE_CODES,
+    OrganizationRoleCode,
+} from "../models/organization.model";
+import { invalidateUserCaches } from "./user.service";
+import { sendSecurityAlertEmail } from "./notification.service";
 import {
     ForgotPasswordBody,
     LoginBody,
@@ -21,6 +27,13 @@ const EMAIL_VERIFY_TTL_HOURS = 24;
 interface SessionMetadata {
     ipAddress?: string;
     userAgent?: string;
+}
+
+interface ParsedSessionClientInfo {
+    deviceName: string | null;
+    deviceType: string | null;
+    browser: string | null;
+    os: string | null;
 }
 
 interface GoogleTokenResponse {
@@ -40,13 +53,6 @@ interface GoogleUserProfile {
     family_name?: string;
     picture?: string;
 }
-
-const ORGANIZATION_ROLE_CODES: OrganizationRoleCode[] = [
-    "owner",
-    "admin",
-    "member",
-    "viewer",
-];
 
 function hashToken(token: string) {
     return createHash("sha256").update(token).digest("hex");
@@ -74,11 +80,111 @@ function addHours(base: Date, hours: number) {
     return date;
 }
 
+function detectBrowser(userAgent: string): string | null {
+    if (!userAgent) return null;
+    const ua = userAgent;
+
+    let match =
+        ua.match(/Edg\/([0-9.]+)/) ||
+        ua.match(/OPR\/([0-9.]+)/) ||
+        ua.match(/Chrome\/([0-9.]+)/) ||
+        ua.match(/Firefox\/([0-9.]+)/) ||
+        ua.match(/Version\/([0-9.]+).*Safari/) ||
+        ua.match(/Safari\/([0-9.]+)/);
+
+    if (!match) return null;
+
+    if (ua.includes("Edg/")) return `Edge ${match[1]}`;
+    if (ua.includes("OPR/")) return `Opera ${match[1]}`;
+    if (ua.includes("Chrome/")) return `Chrome ${match[1]}`;
+    if (ua.includes("Firefox/")) return `Firefox ${match[1]}`;
+    if (ua.includes("Version/") && ua.includes("Safari")) {
+        return `Safari ${match[1]}`;
+    }
+    return "Safari";
+}
+
+function detectOs(userAgent: string): string | null {
+    if (!userAgent) return null;
+    const ua = userAgent;
+
+    let match =
+        ua.match(/Windows NT ([0-9.]+)/) ||
+        ua.match(/Android ([0-9.]+)/) ||
+        ua.match(/iPhone OS ([0-9_]+)/) ||
+        ua.match(/iPad; CPU OS ([0-9_]+)/) ||
+        ua.match(/Mac OS X ([0-9_]+)/);
+
+    if (match) {
+        const version = (match[1] || "").replace(/_/g, ".");
+        if (ua.includes("Windows NT")) return `Windows ${version}`;
+        if (ua.includes("Android")) return `Android ${version}`;
+        if (ua.includes("iPhone OS")) return `iOS ${version}`;
+        if (ua.includes("iPad; CPU OS")) return `iPadOS ${version}`;
+        if (ua.includes("Mac OS X")) return `macOS ${version}`;
+    }
+
+    if (ua.includes("Linux")) return "Linux";
+    return null;
+}
+
+function detectDeviceType(userAgent: string): string | null {
+    if (!userAgent) return null;
+    const ua = userAgent.toLowerCase();
+
+    if (ua.includes("bot") || ua.includes("spider") || ua.includes("crawler")) {
+        return "bot";
+    }
+    if (ua.includes("ipad") || ua.includes("tablet")) return "tablet";
+    if (ua.includes("mobile") || ua.includes("iphone") || ua.includes("android")) {
+        return "mobile";
+    }
+    return "desktop";
+}
+
+function detectDeviceName(userAgent: string, os: string | null): string | null {
+    if (!userAgent) return null;
+    const ua = userAgent.toLowerCase();
+
+    if (ua.includes("iphone")) return "iPhone";
+    if (ua.includes("ipad")) return "iPad";
+    if (ua.includes("android")) return "Android Device";
+    if (ua.includes("macintosh") || ua.includes("mac os x")) return "Mac";
+    if (ua.includes("windows")) return "Windows PC";
+    if (ua.includes("linux")) return "Linux PC";
+    if (ua.includes("bot") || ua.includes("spider") || ua.includes("crawler")) {
+        return "Automated Client";
+    }
+
+    return os ? `${os} Device` : null;
+}
+
+function parseSessionClientInfo(userAgent?: string): ParsedSessionClientInfo {
+    if (!userAgent) {
+        return {
+            deviceName: null,
+            deviceType: null,
+            browser: null,
+            os: null,
+        };
+    }
+
+    const os = detectOs(userAgent);
+    return {
+        deviceName: detectDeviceName(userAgent, os),
+        deviceType: detectDeviceType(userAgent),
+        browser: detectBrowser(userAgent),
+        os,
+    };
+}
+
 function toOrganizationRoleCode(
     roleCode: string | null | undefined,
 ): OrganizationRoleCode | null {
     if (!roleCode) return null;
     const normalized = roleCode.toLowerCase();
+    if (normalized === "owner") return "admin";
+    if (normalized === "viewer") return "member";
     return ORGANIZATION_ROLE_CODES.includes(normalized as OrganizationRoleCode)
         ? (normalized as OrganizationRoleCode)
         : null;
@@ -206,12 +312,18 @@ async function getDefaultOrganizationId(options?: {
 async function createSession(userId: bigint, metadata?: SessionMetadata) {
     const refreshToken = generateOpaqueToken();
     const refreshTokenHash = hashToken(refreshToken);
+    const clientInfo = parseSessionClientInfo(metadata?.userAgent);
 
     const session = await prisma.userSession.create({
         data: {
             userId,
             refreshTokenHash,
             status: "ACTIVE",
+            deviceName: clientInfo.deviceName,
+            deviceType: clientInfo.deviceType,
+            browser: clientInfo.browser,
+            os: clientInfo.os,
+            ipAddress: metadata?.ipAddress,
             userAgent: metadata?.userAgent,
             expiresAt: addDays(new Date(), REFRESH_TOKEN_TTL_DAYS),
         },
@@ -242,15 +354,30 @@ async function createEmailVerificationToken(userId: bigint) {
 
 function toAuthUser(user: {
     uuid: string;
+    organizationId?: bigint;
     fullName: string | null;
     email: string;
     emailVerifiedAt: Date | null;
-}) {
+    organizationMembers?: Array<{
+        organizationId?: bigint;
+        role?: { code: string } | null;
+    }>;
+}, fallbackRoleCode?: string | null) {
+    const activeMembership = user.organizationId
+        ? user.organizationMembers?.find(
+              (member) => member.organizationId === user.organizationId,
+          )
+        : undefined;
+    const roleCode =
+        fallbackRoleCode ??
+        activeMembership?.role?.code ??
+        user.organizationMembers?.[0]?.role?.code;
+
     return {
         id: user.uuid,
         name: user.fullName ?? "",
         email: user.email,
-        role: "USER",
+        role: toAppRole(roleCode),
         emailVerifiedAt: user.emailVerifiedAt,
     };
 }
@@ -261,7 +388,7 @@ export async function registerUser(
 ) {
     const invitation = await getPendingInvitationForEmail(input.email);
     const invitationRole = toOrganizationRoleCode(invitation?.roleCode);
-    const roleCode: OrganizationRoleCode = invitationRole ?? "owner";
+    const roleCode: OrganizationRoleCode = invitationRole ?? "admin";
     const organizationId =
         invitation?.organizationId ??
         (await getDefaultOrganizationId({
@@ -299,6 +426,7 @@ export async function registerUser(
             select: {
                 id: true,
                 uuid: true,
+                organizationId: true,
                 fullName: true,
                 email: true,
                 emailVerifiedAt: true,
@@ -337,7 +465,7 @@ export async function registerUser(
     });
 
     return {
-        user: toAuthUser(user),
+        user: toAuthUser(user, roleCode),
         refreshToken,
         sessionId,
         verifyToken,
@@ -354,12 +482,20 @@ export async function loginUser(input: LoginBody, metadata?: SessionMetadata): P
         select: {
             id: true,
             uuid: true,
+            organizationId: true,
             fullName: true,
             email: true,
             emailVerifiedAt: true,
             passwordHash: true,
             status: true,
             twoFactorEnabled: true,
+            organizationMembers: {
+                where: { status: "ACTIVE" },
+                select: {
+                    organizationId: true,
+                    role: { select: { code: true } },
+                },
+            },
         },
     });
 
@@ -382,6 +518,11 @@ export async function loginUser(input: LoginBody, metadata?: SessionMetadata): P
     }
 
     const { refreshToken, sessionId } = await createSession(user.id, metadata);
+    await sendSecurityAlertEmail({
+        userId: user.id,
+        event: "NEW_LOGIN",
+        metadata,
+    });
     return { twoFactorRequired: false, user: toAuthUser(user), refreshToken, sessionId };
 }
 
@@ -395,12 +536,20 @@ export async function completeTwoFactorLogin(
         select: {
             id: true,
             uuid: true,
+            organizationId: true,
             fullName: true,
             email: true,
             emailVerifiedAt: true,
             status: true,
             twoFactorEnabled: true,
             twoFactorSecret: true,
+            organizationMembers: {
+                where: { status: "ACTIVE" },
+                select: {
+                    organizationId: true,
+                    role: { select: { code: true } },
+                },
+            },
         },
     });
 
@@ -425,6 +574,11 @@ export async function completeTwoFactorLogin(
     }
 
     const { refreshToken, sessionId } = await createSession(user.id, metadata);
+    await sendSecurityAlertEmail({
+        userId: user.id,
+        event: "NEW_LOGIN",
+        metadata,
+    });
     return { user: toAuthUser(user), refreshToken, sessionId };
 }
 
@@ -489,11 +643,19 @@ export async function refreshAccessToken(
                 select: {
                     id: true,
                     uuid: true,
+                    organizationId: true,
                     fullName: true,
                     email: true,
                     emailVerifiedAt: true,
                     deletedAt: true,
                     status: true,
+                    organizationMembers: {
+                        where: { status: "ACTIVE" },
+                        select: {
+                            organizationId: true,
+                            role: { select: { code: true } },
+                        },
+                    },
                 },
             },
         },
@@ -599,9 +761,17 @@ export async function resetPassword(input: ResetPasswordBody) {
                 select: {
                     id: true,
                     uuid: true,
+                    organizationId: true,
                     fullName: true,
                     email: true,
                     emailVerifiedAt: true,
+                    organizationMembers: {
+                        where: { status: "ACTIVE" },
+                        select: {
+                            organizationId: true,
+                            role: { select: { code: true } },
+                        },
+                    },
                 },
             },
         },
@@ -637,6 +807,12 @@ export async function resetPassword(input: ResetPasswordBody) {
         }),
     ]);
 
+    await sendSecurityAlertEmail({
+        userId: token.userId,
+        event: "PASSWORD_RESET",
+    });
+
+    await invalidateUserCaches(token.user.uuid);
     return toAuthUser(token.user);
 }
 
@@ -652,9 +828,17 @@ export async function verifyEmailAddress(input: VerifyEmailBody) {
                 select: {
                     id: true,
                     uuid: true,
+                    organizationId: true,
                     fullName: true,
                     email: true,
                     emailVerifiedAt: true,
+                    organizationMembers: {
+                        where: { status: "ACTIVE" },
+                        select: {
+                            organizationId: true,
+                            role: { select: { code: true } },
+                        },
+                    },
                 },
             },
         },
@@ -683,6 +867,8 @@ export async function verifyEmailAddress(input: VerifyEmailBody) {
             },
         }),
     ]);
+
+    await invalidateUserCaches(record.user.uuid);
 
     await enqueueEmail({
         to: record.user.email,
@@ -804,7 +990,7 @@ export async function authenticateGoogleUser(
 
     const invitation = await getPendingInvitationForEmail(profile.email);
     const invitationRole = toOrganizationRoleCode(invitation?.roleCode);
-    const roleCode: OrganizationRoleCode = invitationRole ?? "owner";
+    const roleCode: OrganizationRoleCode = invitationRole ?? "admin";
     const organizationId =
         invitation?.organizationId ??
         (await getDefaultOrganizationId({
@@ -822,10 +1008,18 @@ export async function authenticateGoogleUser(
         select: {
             id: true,
             uuid: true,
+            organizationId: true,
             fullName: true,
             email: true,
             emailVerifiedAt: true,
             status: true,
+            organizationMembers: {
+                where: { status: "ACTIVE" },
+                select: {
+                    organizationId: true,
+                    role: { select: { code: true } },
+                },
+            },
         },
     });
 
@@ -850,6 +1044,7 @@ export async function authenticateGoogleUser(
                 select: {
                     id: true,
                     uuid: true,
+                    organizationId: true,
                     fullName: true,
                     email: true,
                     emailVerifiedAt: true,
@@ -868,7 +1063,12 @@ export async function authenticateGoogleUser(
                 },
             });
 
-            return createdUser;
+            return {
+                ...createdUser,
+                organizationMembers: [
+                    { organizationId: createdUser.organizationId, role: { code: roleCode } },
+                ],
+            };
         });
     } else {
         if (user.status === "SUSPENDED" || user.status === "DELETED") {
@@ -893,10 +1093,18 @@ export async function authenticateGoogleUser(
             select: {
                 id: true,
                 uuid: true,
+                organizationId: true,
                 fullName: true,
                 email: true,
                 emailVerifiedAt: true,
                 status: true,
+                organizationMembers: {
+                    where: { status: "ACTIVE" },
+                    select: {
+                        organizationId: true,
+                        role: { select: { code: true } },
+                    },
+                },
             },
         });
     }
@@ -915,9 +1123,14 @@ export async function authenticateGoogleUser(
     }
 
     const { refreshToken, sessionId } = await createSession(user.id, metadata);
+    await sendSecurityAlertEmail({
+        userId: user.id,
+        event: "NEW_LOGIN",
+        metadata,
+    });
 
     return {
-        user: toAuthUser(user),
+        user: toAuthUser(user, isNewUser ? roleCode : undefined),
         refreshToken,
         sessionId,
         isNewUser,

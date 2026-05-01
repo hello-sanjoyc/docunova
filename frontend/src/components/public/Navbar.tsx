@@ -15,15 +15,20 @@
  * login page exists (e.g. /login).
  */
 
+import Image from "next/image";
+
 export default function Navbar() {
     return (
         <nav className="fixed top-0 left-0 right-0 z-50 bg-cream/90 backdrop-blur-sm border-b border-border py-3">
             <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
                 {/* Logo mark: document icon with amber checkmark badge */}
                 <div className="flex items-center gap-2">
-                    <img
+                    <Image
                         src="/logo.png"
                         alt="DocuNova AI logo"
+                        width={48}
+                        height={48}
+                        priority
                         className="h-12 w-auto"
                     />
                     <span className="font-medium text-ink text-[24px] tracking-tight">

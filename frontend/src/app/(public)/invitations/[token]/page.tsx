@@ -10,17 +10,18 @@
  *      them back here after auth — at which point step 2 runs.
  */
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useRef, useState, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import {
     acceptInvitation,
     getInvitation,
-    InvitationDetails,
 } from "@/lib/api/organizations";
 import { formatApiError } from "@/lib/api/errors";
 import { getAccessToken } from "@/lib/api/session";
+import { useApiQuery } from "@/lib/query/apiQuery";
+import { queryKeys } from "@/lib/query/queryKeys";
 
 type Stage = "loading" | "invalid" | "ready" | "accepting";
 
@@ -31,52 +32,48 @@ export default function InvitationPage({
 }) {
     const { token } = use(params);
     const router = useRouter();
-    const [stage, setStage] = useState<Stage>("loading");
-    const [invitation, setInvitation] = useState<InvitationDetails | null>(null);
-    const [errorMessage, setErrorMessage] = useState("");
+    const hasAttemptedAutoAccept = useRef(false);
+    const [autoAcceptStage, setAutoAcceptStage] = useState<"idle" | "accepting" | "failed">("idle");
+    const [autoAcceptErrorMessage, setAutoAcceptErrorMessage] = useState("");
+    const invitationQuery = useApiQuery({
+        queryKey: queryKeys.organizations.invitation(token),
+        queryFn: () => getInvitation(token),
+    });
+    const invitation = invitationQuery.data ?? null;
 
     useEffect(() => {
-        let cancelled = false;
-
-        async function hydrate() {
-            try {
-                const details = await getInvitation(token);
-                if (cancelled) return;
-                setInvitation(details);
-
-                // Already signed in? Accept immediately.
-                if (getAccessToken()) {
-                    setStage("accepting");
-                    try {
-                        const result = await acceptInvitation(token);
-                        if (cancelled) return;
-                        toast.success(
-                            result.organization
-                                ? `You're now a member of ${result.organization.name}.`
-                                : "Invitation accepted.",
-                        );
-                        router.replace("/team");
-                    } catch (error) {
-                        if (cancelled) return;
-                        setErrorMessage(formatApiError(error));
-                        setStage("invalid");
-                    }
-                    return;
-                }
-
-                setStage("ready");
-            } catch (error) {
-                if (cancelled) return;
-                setErrorMessage(formatApiError(error));
-                setStage("invalid");
-            }
+        if (!invitation) return;
+        // Already signed in? Accept immediately.
+        if (getAccessToken() && !hasAttemptedAutoAccept.current) {
+            hasAttemptedAutoAccept.current = true;
+            queueMicrotask(() => setAutoAcceptStage("accepting"));
+            void acceptInvitation(token)
+                .then((result) => {
+                    toast.success(
+                        result.organization
+                            ? `You're now a member of ${result.organization.name}.`
+                            : "Invitation accepted.",
+                    );
+                    router.replace("/team");
+                })
+                .catch((error) => {
+                    setAutoAcceptErrorMessage(formatApiError(error));
+                    setAutoAcceptStage("failed");
+                });
         }
+    }, [invitation, router, token]);
 
-        void hydrate();
-        return () => {
-            cancelled = true;
-        };
-    }, [router, token]);
+    const stage: Stage = invitationQuery.isPending
+        ? "loading"
+        : invitationQuery.isError || autoAcceptStage === "failed"
+          ? "invalid"
+          : autoAcceptStage === "accepting"
+            ? "accepting"
+            : "ready";
+
+    const errorMessage = invitationQuery.isError
+        ? formatApiError(invitationQuery.error)
+        : autoAcceptErrorMessage;
 
     const nextPath  = `/invitations/${token}`;
     const emailQs   = invitation ? `&email=${encodeURIComponent(invitation.email)}` : "";

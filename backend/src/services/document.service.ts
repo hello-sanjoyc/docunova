@@ -15,7 +15,48 @@ import {
 } from "./storage.service";
 import { generatePdfThumbnail } from "./pdf.service";
 import { enqueueAiSummarize } from "../queues/ai.queue";
+import { enqueueOcr } from "../queues/ocr.queue";
 import { createLogger } from "../config/logger";
+import { invalidateRecentStatsCache } from "./search.service";
+import {
+    cacheDelByPattern,
+    cacheGetOrSet,
+    cacheKey,
+} from "./cache.service";
+
+const DOC_LIST_TTL_SECONDS = 30;
+
+function docListQuerySig(kind: "all" | "trash", query: DocumentListQuery) {
+    // Deterministic, compact signature of the filters that affect result set.
+    // Order matters — keep fields alphabetical and stable across callers.
+    return [
+        kind,
+        `p=${query.page ?? ""}`,
+        `l=${query.limit ?? ""}`,
+        `s=${query.status ?? ""}`,
+        `m=${query.mimeType ?? ""}`,
+        `f=${query.folderId ?? ""}`,
+        `q=${query.search ?? ""}`,
+        `sb=${query.sortBy ?? ""}`,
+        `so=${query.sortOrder ?? ""}`,
+    ].join("|");
+}
+
+function docListKey(userUuid: string, kind: "all" | "trash", query: DocumentListQuery) {
+    return cacheKey("doc-list", userUuid, docListQuerySig(kind, query));
+}
+
+function docListPattern(userUuid: string) {
+    return cacheKey("doc-list", userUuid, "*");
+}
+
+async function invalidateDocListCache(userUuid: string) {
+    await cacheDelByPattern(docListPattern(userUuid));
+}
+
+export async function invalidateDocumentListCacheForUser(userUuid: string) {
+    await invalidateDocListCache(userUuid);
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +89,58 @@ async function findDocumentForUser(documentUuid: string, ownerId: bigint) {
         throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
     }
     return doc;
+}
+
+async function normalizeReadyStatusFromSummary<
+    T extends { id: bigint; status: string; updatedAt?: Date },
+>(documents: T[]): Promise<T[]> {
+    const candidates = documents.filter((doc) => doc.status !== "READY");
+    if (candidates.length === 0) return documents;
+
+    const summaries = await prisma.documentAiSummary.findMany({
+        where: {
+            documentId: { in: candidates.map((doc) => doc.id) },
+            summaryType: "general",
+        },
+        select: { documentId: true },
+        distinct: ["documentId"],
+    });
+    if (summaries.length === 0) return documents;
+
+    const readyDocumentIds = new Set(
+        summaries.map((summary) => summary.documentId.toString()),
+    );
+
+    const corrected = documents.map((doc) => {
+        if (doc.status === "READY") return doc;
+        if (!readyDocumentIds.has(doc.id.toString())) return doc;
+        return {
+            ...doc,
+            status: "READY",
+            ...(doc.updatedAt ? { updatedAt: new Date() } : {}),
+        };
+    });
+
+    const idsToPersist = candidates
+        .filter((doc) => readyDocumentIds.has(doc.id.toString()))
+        .map((doc) => doc.id);
+
+    if (idsToPersist.length > 0) {
+        await prisma.document
+            .updateMany({
+                where: {
+                    id: { in: idsToPersist },
+                    status: { not: "READY" },
+                },
+                data: {
+                    status: "READY",
+                    updatedAt: new Date(),
+                },
+            })
+            .catch(() => {});
+    }
+
+    return corrected;
 }
 
 function escapePdfText(value: string) {
@@ -100,18 +193,51 @@ function toRgb(value: [number, number, number]) {
     return value.map((n) => (n / 255).toFixed(3)).join(" ");
 }
 
+function summaryMetadataText(
+    metadata: Record<string, unknown>,
+    keys: string[],
+): string | null {
+    function formatValue(value: unknown): string {
+        if (typeof value === "string" && value.trim()) return value.trim();
+        if (typeof value === "number" && Number.isFinite(value)) return String(value);
+        if (Array.isArray(value)) {
+            return value.map(formatValue).filter(Boolean).join(" · ");
+        }
+        if (value && typeof value === "object") {
+            return Object.entries(value as Record<string, unknown>)
+                .map(([key, entryValue]) => {
+                    const formatted = formatValue(entryValue);
+                    return formatted ? `${key}: ${formatted}` : "";
+                })
+                .filter(Boolean)
+                .join(" · ");
+        }
+        return "";
+    }
+
+    for (const key of keys) {
+        const formatted = formatValue(metadata[key]);
+        if (formatted) return formatted;
+        if (Object.prototype.hasOwnProperty.call(metadata, key)) return null;
+    }
+    return null;
+}
+
 function buildStyledSummaryPdf(data: {
     filename: string;
     status: string;
     pageCount: number | null;
     processedText: string;
-    parties: string;
-    effectiveDate: string;
-    obligations: string;
-    payment: string;
-    redFlags: string;
-    actions: string;
-    summary: string;
+    parties: string | null;
+    effectiveDate: string | null;
+    obligations: string | null;
+    indemnity: string | null;
+    IP: string | null;
+    confidentiality: string | null;
+    payment: string | null;
+    redFlags: string | null;
+    actions: string | null;
+    summary: string | null;
 }) {
     const pageWidth = 595;
     const pageHeight = 842;
@@ -137,6 +263,12 @@ function buildStyledSummaryPdf(data: {
         panelBg: [247, 245, 241] as [number, number, number],
     };
 
+    type SummaryPdfRow = {
+        label: string;
+        value: string;
+        tone: "normal" | "red" | "green";
+    };
+
     const rows = [
         { label: "PARTIES", value: data.parties, tone: "normal" as const },
         {
@@ -145,15 +277,25 @@ function buildStyledSummaryPdf(data: {
             tone: "normal" as const,
         },
         { label: "OBLIGATIONS", value: data.obligations, tone: "normal" as const },
+        { label: "INDEMNITY", value: data.indemnity, tone: "normal" as const },
+        { label: "IP", value: data.IP, tone: "normal" as const },
+        {
+            label: "CONFIDENTIALITY",
+            value: data.confidentiality,
+            tone: "normal" as const,
+        },
         { label: "PAYMENT", value: data.payment, tone: "normal" as const },
         { label: "RED FLAGS", value: data.redFlags, tone: "red" as const },
         { label: "ACTIONS", value: data.actions, tone: "green" as const },
         { label: "SUMMARY", value: data.summary, tone: "normal" as const },
-    ];
+    ].filter(
+        (row): row is SummaryPdfRow =>
+            typeof row.value === "string" && Boolean(row.value.trim()),
+    );
 
     const valueMaxWidth = rowValueW - rowPadX * 2 - 2;
     const rowMetrics = rows.map((row) => {
-        const lines = wrapTextByWidth(row.value || "-", valueMaxWidth, valueFont);
+        const lines = wrapTextByWidth(row.value, valueMaxWidth, valueFont);
         const minH = row.label === "SUMMARY" ? 138 : 46;
         const contentH = rowPadY * 2 + lines.length * lineH;
         return { ...row, lines, h: Math.max(minH, contentH) };
@@ -295,12 +437,16 @@ function buildStyledSummaryPdf(data: {
     const header = "%PDF-1.4\n";
     let body = "";
     const offsets = [0];
+    // Track running offset to avoid O(n²) Buffer.byteLength recomputation on growing string.
+    let runningOffset = Buffer.byteLength(header, "utf8");
     for (let i = 0; i < objects.length; i += 1) {
-        offsets.push(Buffer.byteLength(header + body, "utf8"));
-        body += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+        offsets.push(runningOffset);
+        const chunk = `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+        body += chunk;
+        runningOffset += Buffer.byteLength(chunk, "utf8");
     }
 
-    const xrefStart = Buffer.byteLength(header + body, "utf8");
+    const xrefStart = runningOffset;
     let xref = `xref\n0 ${objects.length + 1}\n`;
     xref += "0000000000 65535 f \n";
     for (let i = 1; i < offsets.length; i += 1) {
@@ -375,8 +521,10 @@ export async function uploadDocument(input: UploadDocumentInput) {
         const isDocx =
             input.mimeType ===
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        const shouldRunAiSummarization = isPdf || isDocx;
-        const { pageCount, extractedText } = input;
+        const isImage =
+            input.mimeType === "image/jpeg" || input.mimeType === "image/png";
+        const shouldRunAiSummarization = isPdf || isDocx || isImage;
+        const { pageCount, extractedText, needsOcr } = input;
 
         // PDF thumbnail (best-effort) — page count / text already extracted in middleware
         let thumbnailStorageKey: string | null = null;
@@ -436,9 +584,8 @@ export async function uploadDocument(input: UploadDocumentInput) {
             classification: input.classification.label,
         });
 
-        // ── Persist Document + Version + OCR + Classification ──────────────
         logger.info("Database transaction started", {
-            stage: "document-version-ocr-persist",
+            stage: "document-version-persist",
         });
         const doc = await prisma.$transaction(async (tx) => {
             const created = await tx.document.create({
@@ -479,12 +626,14 @@ export async function uploadDocument(input: UploadDocumentInput) {
                 data: { currentVersionId: version.id },
             });
 
-            if (extractedText) {
+            if (extractedText && !needsOcr) {
                 await tx.documentOcrResult.create({
                     data: {
                         documentId: created.id,
                         extractedText,
                         pageTextJson: [],
+                        ocrStatus: "COMPLETED",
+                        ocrMethod: "native",
                     },
                 });
             }
@@ -505,21 +654,37 @@ export async function uploadDocument(input: UploadDocumentInput) {
             status: doc.status,
         });
 
-        // Fire-and-forget: enqueue AI summarization for supported text documents
+        // The new upload bumps createdCount in recent-activity stats and
+        // changes the paginated listings.
+        invalidateRecentStatsCache(input.userId).catch(() => {});
+        invalidateDocListCache(input.userId).catch(() => {});
+
         if (shouldRunAiSummarization) {
-            enqueueAiSummarize(doc.uuid, input.userId)
-                .then((jobId) => {
-                    logger.info("AI summarization job queued", {
-                        documentUuid: doc.uuid,
-                        jobId,
+            if (needsOcr) {
+                logger.info("Queuing OCR extraction (scanned document)", { documentUuid: doc.uuid });
+                enqueueOcr(doc.uuid, input.userId, storageKey, input.fileExtension)
+                    .then((jobId) => {
+                        logger.info("OCR job queued", { documentUuid: doc.uuid, jobId });
+                    })
+                    .catch((err) => {
+                        logger.error("OCR enqueue failed", { documentUuid: doc.uuid, err });
                     });
-                })
-                .catch((err) => {
-                    logger.error("AI summarization enqueue failed", {
-                        documentUuid: doc.uuid,
-                        err,
+            } else {
+                logger.info("Queuing AI summarization", { documentUuid: doc.uuid });
+                enqueueAiSummarize(doc.uuid, input.userId)
+                    .then((jobId) => {
+                        logger.info("AI summarization job queued", {
+                            documentUuid: doc.uuid,
+                            jobId,
+                        });
+                    })
+                    .catch((err) => {
+                        logger.error("AI summarization enqueue failed", {
+                            documentUuid: doc.uuid,
+                            err,
+                        });
                     });
-                });
+            }
         }
 
         logger.info("Document upload pipeline completed", {
@@ -547,8 +712,9 @@ export async function uploadDocument(input: UploadDocumentInput) {
 export async function getDocumentById(documentUuid: string, userId: string) {
     const owner = await resolveOwner(userId);
     const doc = await findDocumentForUser(documentUuid, owner.id);
+    const [normalizedDoc] = await normalizeReadyStatusFromSummary([doc]);
     trackAccess(doc.id, owner.id, "view").catch(() => {});
-    return serializeDoc(doc as unknown as Record<string, unknown>);
+    return serializeDoc(normalizedDoc as unknown as Record<string, unknown>);
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -557,59 +723,67 @@ export async function getDocumentsByUser(
     userId: string,
     query: DocumentListQuery,
 ) {
-    const owner = await resolveOwner(userId);
-    const { page, limit, skip } = getPaginationParams(query);
+    return cacheGetOrSet(
+        docListKey(userId, "all", query),
+        DOC_LIST_TTL_SECONDS,
+        async () => {
+            const owner = await resolveOwner(userId);
+            const { page, limit, skip } = getPaginationParams(query);
 
-    const where: Record<string, unknown> = {
-        ownerUserId: owner.id,
-        deletedAt: null,
-    };
+            const where: Record<string, unknown> = {
+                ownerUserId: owner.id,
+                deletedAt: null,
+            };
 
-    if (query.status) where.status = query.status;
-    if (query.folderId) {
-        const folder = await prisma.folder.findFirst({
-            where: {
-                uuid: query.folderId,
-                organizationId: owner.organizationId,
-            },
-            select: { id: true },
-        });
-        where.folderId = folder?.id ?? null;
-    }
-    if (query.mimeType) where.mimeType = { startsWith: query.mimeType };
-    if (query.search)
-        where.title = { contains: query.search, mode: "insensitive" };
+            if (query.status) where.status = query.status;
+            if (query.folderId) {
+                const folder = await prisma.folder.findFirst({
+                    where: {
+                        uuid: query.folderId,
+                        organizationId: owner.organizationId,
+                    },
+                    select: { id: true },
+                });
+                where.folderId = folder?.id ?? null;
+            }
+            if (query.mimeType) where.mimeType = { startsWith: query.mimeType };
+            if (query.search)
+                where.title = { contains: query.search, mode: "insensitive" };
 
-    const allowedSortFields = [
-        "uploadedAt",
-        "updatedAt",
-        "title",
-        "fileSizeBytes",
-    ] as const;
-    const sortBy = allowedSortFields.includes(
-        query.sortBy as (typeof allowedSortFields)[number],
-    )
-        ? query.sortBy!
-        : "uploadedAt";
-    const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
+            const allowedSortFields = [
+                "uploadedAt",
+                "updatedAt",
+                "title",
+                "fileSizeBytes",
+            ] as const;
+            const sortBy = allowedSortFields.includes(
+                query.sortBy as (typeof allowedSortFields)[number],
+            )
+                ? query.sortBy!
+                : "uploadedAt";
+            const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
 
-    const [documents, total] = await Promise.all([
-        prisma.document.findMany({
-            where,
-            skip,
-            take: limit,
-            orderBy: { [sortBy]: sortOrder },
-        }),
-        prisma.document.count({ where }),
-    ]);
+            const [documents, total] = await Promise.all([
+                prisma.document.findMany({
+                    where,
+                    skip,
+                    take: limit,
+                    orderBy: { [sortBy]: sortOrder },
+                }),
+                prisma.document.count({ where }),
+            ]);
+            const normalizedDocuments =
+                await normalizeReadyStatusFromSummary(documents);
 
-    return buildPaginatedResult(
-        documents.map((doc) =>
-            serializeDoc(doc as unknown as Record<string, unknown>),
-        ),
-        total,
-        page,
-        limit,
+            return buildPaginatedResult(
+                normalizedDocuments.map((doc) =>
+                    serializeDoc(doc as unknown as Record<string, unknown>),
+                ),
+                total,
+                page,
+                limit,
+            );
+        },
     );
 }
 
@@ -619,59 +793,65 @@ export async function getTrashedDocumentsByUser(
     userId: string,
     query: DocumentListQuery,
 ) {
-    const owner = await resolveOwner(userId);
-    const { page, limit, skip } = getPaginationParams(query);
+    return cacheGetOrSet(
+        docListKey(userId, "trash", query),
+        DOC_LIST_TTL_SECONDS,
+        async () => {
+            const owner = await resolveOwner(userId);
+            const { page, limit, skip } = getPaginationParams(query);
 
-    const where: Record<string, unknown> = {
-        ownerUserId: owner.id,
-        deletedAt: { not: null },
-        status: "TRASHED",
-    };
+            const where: Record<string, unknown> = {
+                ownerUserId: owner.id,
+                deletedAt: { not: null },
+                status: "TRASHED",
+            };
 
-    if (query.folderId) {
-        const folder = await prisma.folder.findFirst({
-            where: {
-                uuid: query.folderId,
-                organizationId: owner.organizationId,
-            },
-            select: { id: true },
-        });
-        where.folderId = folder?.id ?? null;
-    }
-    if (query.mimeType) where.mimeType = { startsWith: query.mimeType };
-    if (query.search)
-        where.title = { contains: query.search, mode: "insensitive" };
+            if (query.folderId) {
+                const folder = await prisma.folder.findFirst({
+                    where: {
+                        uuid: query.folderId,
+                        organizationId: owner.organizationId,
+                    },
+                    select: { id: true },
+                });
+                where.folderId = folder?.id ?? null;
+            }
+            if (query.mimeType) where.mimeType = { startsWith: query.mimeType };
+            if (query.search)
+                where.title = { contains: query.search, mode: "insensitive" };
 
-    const allowedSortFields = [
-        "uploadedAt",
-        "updatedAt",
-        "title",
-        "fileSizeBytes",
-    ] as const;
-    const sortBy = allowedSortFields.includes(
-        query.sortBy as (typeof allowedSortFields)[number],
-    )
-        ? query.sortBy!
-        : "updatedAt";
-    const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
+            const allowedSortFields = [
+                "uploadedAt",
+                "updatedAt",
+                "title",
+                "fileSizeBytes",
+            ] as const;
+            const sortBy = allowedSortFields.includes(
+                query.sortBy as (typeof allowedSortFields)[number],
+            )
+                ? query.sortBy!
+                : "updatedAt";
+            const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
 
-    const [documents, total] = await Promise.all([
-        prisma.document.findMany({
-            where,
-            skip,
-            take: limit,
-            orderBy: { [sortBy]: sortOrder },
-        }),
-        prisma.document.count({ where }),
-    ]);
+            const [documents, total] = await Promise.all([
+                prisma.document.findMany({
+                    where,
+                    skip,
+                    take: limit,
+                    orderBy: { [sortBy]: sortOrder },
+                }),
+                prisma.document.count({ where }),
+            ]);
 
-    return buildPaginatedResult(
-        documents.map((doc) =>
-            serializeDoc(doc as unknown as Record<string, unknown>),
-        ),
-        total,
-        page,
-        limit,
+            return buildPaginatedResult(
+                documents.map((doc) =>
+                    serializeDoc(doc as unknown as Record<string, unknown>),
+                ),
+                total,
+                page,
+                limit,
+            );
+        },
     );
 }
 
@@ -714,6 +894,10 @@ export async function updateDocument(input: UpdateDocumentInput) {
         where: { id: doc.id },
         data,
     });
+
+    // Title/status/folder changes alter what appears in the paginated listings.
+    invalidateDocListCache(input.userId).catch(() => {});
+
     return serializeDoc(updated as unknown as Record<string, unknown>);
 }
 
@@ -727,6 +911,11 @@ export async function deleteDocument(documentUuid: string, userId: string) {
         where: { id: doc.id },
         data: { deletedAt: new Date(), deletedBy: owner.id, status: "TRASHED" },
     });
+
+    // Shifts createdCount ↓ and trashedCount ↑ in recent-activity stats and
+    // moves the doc from the main listing into the trash listing.
+    invalidateRecentStatsCache(userId).catch(() => {});
+    invalidateDocListCache(userId).catch(() => {});
 
     // Best-effort: remove from object storage
     //deleteFromStorage(doc.storageKey).catch(() => {});
@@ -768,6 +957,11 @@ export async function restoreDocument(documentUuid: string, userId: string) {
         },
     });
 
+    // Shifts createdCount ↑ and trashedCount ↓ in recent-activity stats and
+    // moves the doc from the trash listing back into the main listing.
+    invalidateRecentStatsCache(userId).catch(() => {});
+    invalidateDocListCache(userId).catch(() => {});
+
     return serializeDoc(updated as unknown as Record<string, unknown>);
 }
 
@@ -778,13 +972,16 @@ export interface SummaryViewData {
     status: string;
     pageCount: number | null;
     processedText: string;
-    parties: string;
-    effectiveDate: string;
-    obligations: string;
-    payment: string;
-    redFlags: string;
-    actions: string;
-    summary: string;
+    parties: string | null;
+    effectiveDate: string | null;
+    obligations: string | null;
+    indemnity: string | null;
+    IP: string | null;
+    confidentiality: string | null;
+    payment: string | null;
+    redFlags: string | null;
+    actions: string | null;
+    summary: string | null;
 }
 
 export async function getSummaryPdf(
@@ -852,23 +1049,29 @@ export async function getSummaryViewData(
         status: doc.status,
         pageCount,
         processedText,
-        parties: String(metadata.parties ?? metadata.partyNames ?? "-"),
-        effectiveDate: String(
-            metadata.effectiveDate ?? metadata.dateRange ?? metadata.term ?? "-",
-        ),
-        obligations: String(metadata.obligations ?? metadata.keyObligations ?? "-"),
-        payment: String(metadata.payment ?? metadata.paymentTerms ?? "-"),
-        redFlags: String(metadata.redFlags ?? metadata.riskFlags ?? metadata.risks ?? "-"),
-        actions: String(
-            metadata.actions ?? metadata.recommendedActions ?? metadata.nextActions ?? "-",
-        ),
-        summary: String(
-            metadata.summary ??
-                metadata.aiSummary ??
-                metadata.textSnippet ??
-                metadata.textPreview ??
-                "-",
-        ),
+        parties: summaryMetadataText(metadata, ["parties", "partyNames"]),
+        effectiveDate: summaryMetadataText(metadata, [
+            "effectiveDate",
+            "dateRange",
+            "term",
+        ]),
+        obligations: summaryMetadataText(metadata, ["obligations", "keyObligations"]),
+        indemnity: summaryMetadataText(metadata, ["indemnity"]),
+        IP: summaryMetadataText(metadata, ["IP", "ip"]),
+        confidentiality: summaryMetadataText(metadata, ["confidentiality"]),
+        payment: summaryMetadataText(metadata, ["payment", "paymentTerms"]),
+        redFlags: summaryMetadataText(metadata, ["redFlags", "riskFlags", "risks"]),
+        actions: summaryMetadataText(metadata, [
+            "actions",
+            "recommendedActions",
+            "nextActions",
+        ]),
+        summary: summaryMetadataText(metadata, [
+            "summary",
+            "aiSummary",
+            "textSnippet",
+            "textPreview",
+        ]),
     };
 }
 

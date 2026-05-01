@@ -1,11 +1,13 @@
 import speakeasy from 'speakeasy';
 import qrcode from 'qrcode';
 import prisma from '../config/prisma';
+import { invalidateUserCaches } from './user.service';
 
 const APP_NAME = 'Docunova';
 
 /**
- * Simple enable flow — generate a fresh TOTP secret and immediately enable 2FA.
+ * Step 1 — generate and persist a fresh TOTP secret.
+ * 2FA remains disabled until verify2FA succeeds.
  */
 export async function initiate2FA(userUuid: string): Promise<{
     otpauthUri: string;
@@ -26,15 +28,16 @@ export async function initiate2FA(userUuid: string): Promise<{
     const otpauthUri   = generated.otpauth_url as string;
     const qrCodeDataUrl = await qrcode.toDataURL(otpauthUri);
 
-    // Persist secret and enable immediately for simple toggle UX.
+    // Persist secret only. Enabling happens after first valid TOTP verification.
     await prisma.user.update({
         where: { id: user.id },
         data:  {
             twoFactorSecret: secret,
-            twoFactorEnabled: true,
+            twoFactorEnabled: false,
         },
     });
 
+    await invalidateUserCaches(userUuid);
     return { otpauthUri, qrCodeDataUrl, secret };
 }
 
@@ -67,6 +70,8 @@ export async function verify2FA(userUuid: string, code: string): Promise<void> {
         where: { id: user.id },
         data:  { twoFactorEnabled: true },
     });
+
+    await invalidateUserCaches(userUuid);
 }
 
 /**
@@ -85,4 +90,6 @@ export async function disable2FA(userUuid: string): Promise<void> {
         where: { id: user.id },
         data:  { twoFactorEnabled: false, twoFactorSecret: null },
     });
+
+    await invalidateUserCaches(userUuid);
 }

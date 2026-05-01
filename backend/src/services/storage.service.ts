@@ -31,10 +31,11 @@ const logger = createLogger({ context: 'storage-service' });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function buildObjectKey(relativePath: string): string {
+function buildObjectKey(relativePath: string, basePath = env.DOCUMENT_STORAGE_PATH): string {
   // Normalise: strip leading slash, prefix with DOCUMENT_STORAGE_PATH
   const clean = relativePath.replace(/^\/+/, '');
-  return `${env.DOCUMENT_STORAGE_PATH}/${clean}`;
+  const cleanBase = basePath.replace(/^\/+|\/+$/g, '');
+  return `${cleanBase}/${clean}`;
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
@@ -55,8 +56,11 @@ export async function uploadToStorage(
   fileStream: Readable,
   relativePath: string,
   mimeType: string,
+  options?: {
+    basePath?: string;
+  },
 ): Promise<UploadResult> {
-  const objectKey = buildObjectKey(relativePath);
+  const objectKey = buildObjectKey(relativePath, options?.basePath);
   const startedAt = Date.now();
   logger.info('Storage upload started', { objectKey, mimeType });
 

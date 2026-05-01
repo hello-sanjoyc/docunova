@@ -50,7 +50,10 @@ function GoogleOAuthCallbackPageContent() {
 
   return (
     <div className="min-h-screen bg-cream flex items-center justify-center px-6">
-      <p className="text-sm text-muted">Completing Google sign-in...</p>
+      <div className="text-center">
+        <h1 className="text-2xl font-light text-ink">Completing Google sign-in</h1>
+        <p className="mt-2 text-sm text-muted">Redirecting you to DocuNova AI...</p>
+      </div>
     </div>
   );
 }

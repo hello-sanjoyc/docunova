@@ -1,13 +1,11 @@
 import { FastifySchema } from "fastify";
 import { PaginationQuery } from "../types";
 
-export type OrganizationRoleCode = "owner" | "admin" | "member" | "viewer";
+export type OrganizationRoleCode = "admin" | "member";
 
 export const ORGANIZATION_ROLE_CODES: OrganizationRoleCode[] = [
-    "owner",
     "admin",
     "member",
-    "viewer",
 ];
 
 export interface InviteMembersBody {

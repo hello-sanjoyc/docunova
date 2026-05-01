@@ -27,39 +27,33 @@ import FAQ from "@/components/public/FAQ";
 import FinalCTA from "@/components/public/FinalCTA";
 import Footer from "@/components/public/Footer";
 import MoveToUpButton from "@/components/public/MoveToUpButton";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
+import JsonLd from "@/components/seo/JsonLd";
+import {
+    DEFAULT_TITLE,
+    SITE_DESCRIPTION,
+    createOrganizationSchema,
+    createPageMetadata,
+    createSoftwareApplicationSchema,
+    createWebsiteSchema,
+} from "@/lib/seo";
 
-export const metadata: Metadata = {
-    title: `${SITE_NAME} | Understand any contract in 60 seconds`,
+export const metadata: Metadata = createPageMetadata({
+    title: DEFAULT_TITLE,
     description: SITE_DESCRIPTION,
-    alternates: {
-        canonical: "/",
-    },
-};
-
-const organizationSchema = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    name: SITE_NAME,
-    applicationCategory: "BusinessApplication",
-    operatingSystem: "Web",
-    description: SITE_DESCRIPTION,
-    url: SITE_URL,
-    offers: {
-        "@type": "Offer",
-        price: "0",
-        priceCurrency: "USD",
-    },
-};
+    path: "/",
+    absoluteTitle: true,
+});
 
 export default function Home() {
     return (
         <>
-            <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{
-                    __html: JSON.stringify(organizationSchema),
-                }}
+            <JsonLd
+                id="home-schema"
+                data={[
+                    createOrganizationSchema(),
+                    createWebsiteSchema(),
+                    createSoftwareApplicationSchema(),
+                ]}
             />
             <Navbar />
             <main>

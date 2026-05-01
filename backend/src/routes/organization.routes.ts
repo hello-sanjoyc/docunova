@@ -5,7 +5,7 @@ import {
     postAcceptInvitation,
     postMemberInvitations,
 } from "../controllers/organization.controller";
-import { authenticate } from "../middlewares/authenticate";
+import { authenticate, requireRoles } from "../middlewares/authenticate";
 import {
     acceptInvitationSchema,
     inviteMembersSchema,
@@ -21,7 +21,7 @@ export default async function organizationRoutes(fastify: FastifyInstance) {
     });
 
     fastify.post("/me/members", {
-        preHandler: authenticate,
+        preHandler: [authenticate, requireRoles("SUPERADMIN", "ADMIN")],
         schema:     inviteMembersSchema,
         handler:    postMemberInvitations,
     });

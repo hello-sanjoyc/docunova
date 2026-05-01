@@ -8,8 +8,46 @@ import {
     OrganizationRoleCode,
 } from "../models/organization.model";
 import { getPaginationParams, buildPaginatedResult } from "../utils/pagination";
+import {
+    cacheDelByPattern,
+    cacheGetOrSet,
+    cacheKey,
+} from "./cache.service";
+import { invalidateUserCaches } from "./user.service";
+
+const MEMBERS_CACHE_TTL_SECONDS = 30;
+
+function membersCacheKey(
+    organizationId: bigint,
+    status: string,
+    page: number,
+    limit: number,
+) {
+    return cacheKey("org-members", organizationId, status, "p", page, "l", limit);
+}
+
+function membersCachePattern(organizationId: bigint) {
+    return cacheKey("org-members", organizationId, "*");
+}
+
+async function invalidateMembersCache(organizationId: bigint) {
+    await cacheDelByPattern(membersCachePattern(organizationId));
+}
 
 const INVITATION_TTL_DAYS = 7;
+
+function normalizeOrganizationRoleCode(
+    roleCode: string | null | undefined,
+): OrganizationRoleCode | null {
+    if (!roleCode) return null;
+    const normalized = roleCode.trim().toLowerCase();
+    if (normalized === "owner") return "admin";
+    if (normalized === "viewer") return "member";
+    if (normalized === "admin" || normalized === "member") {
+        return normalized;
+    }
+    return null;
+}
 
 function hashToken(token: string) {
     return createHash("sha256").update(token).digest("hex");
@@ -54,6 +92,20 @@ export async function listMembers(userUuid: string, query: MemberListQuery) {
     const { page, limit, skip } = getPaginationParams(query);
     const statusFilter = query.status ?? "active";
 
+    return cacheGetOrSet(
+        membersCacheKey(organizationId, statusFilter, page, limit),
+        MEMBERS_CACHE_TTL_SECONDS,
+        () => loadMembersPage(organizationId, statusFilter, page, limit, skip),
+    );
+}
+
+async function loadMembersPage(
+    organizationId: bigint,
+    statusFilter: string,
+    page: number,
+    limit: number,
+    skip: number,
+) {
     const memberWhere =
         statusFilter === "all"
             ? { organizationId }
@@ -140,8 +192,13 @@ export async function listMembers(userUuid: string, query: MemberListQuery) {
         const roleCodes = Array.from(
             new Set(
                 pendingInvitations
-                    .map((invitation) => invitation.roleCode)
-                    .filter((value): value is string => Boolean(value)),
+                    .map((invitation) =>
+                        normalizeOrganizationRoleCode(invitation.roleCode),
+                    )
+                    .filter(
+                        (value): value is OrganizationRoleCode =>
+                            value !== null,
+                    ),
             ),
         );
 
@@ -158,7 +215,7 @@ export async function listMembers(userUuid: string, query: MemberListQuery) {
         }
 
         invitationData = pendingInvitations.map((invitation) => {
-            const roleCode = invitation.roleCode?.toLowerCase() ?? null;
+            const roleCode = normalizeOrganizationRoleCode(invitation.roleCode);
             const roleName = roleCode
                 ? roleNameMap.get(roleCode) ??
                   `${roleCode.charAt(0).toUpperCase()}${roleCode.slice(1)}`
@@ -289,6 +346,10 @@ export async function inviteMembers(
         (o) => o.status === "invited" || o.status === "re-invited",
     ).length;
 
+    if (sentCount > 0) {
+        await invalidateMembersCache(organizationId);
+    }
+
     return { sent: sentCount, total: normalizedEmails.length, results: outcomes };
 }
 
@@ -325,7 +386,7 @@ export async function getInvitationByToken(token: string) {
     return {
         id:               invitation.uuid,
         email:            invitation.email,
-        role:             invitation.roleCode,
+        role:             normalizeOrganizationRoleCode(invitation.roleCode),
         expiresAt:        invitation.expiresAt,
         hasExistingUser:  Boolean(existingUser),
         organization: {
@@ -379,8 +440,9 @@ export async function acceptInvitation(userUuid: string, token: string) {
         );
     }
 
-    const roleId = invitation.roleCode
-        ? await resolveRoleId(invitation.organizationId, invitation.roleCode as OrganizationRoleCode)
+    const invitationRoleCode = normalizeOrganizationRoleCode(invitation.roleCode);
+    const roleId = invitationRoleCode
+        ? await resolveRoleId(invitation.organizationId, invitationRoleCode)
         : null;
 
     const now = new Date();
@@ -416,7 +478,17 @@ export async function acceptInvitation(userUuid: string, token: string) {
                 acceptedBy: user.id,
             },
         }),
+        prisma.user.update({
+            where: { id: user.id },
+            data: {
+                organizationId: invitation.organizationId,
+                updatedAt: now,
+            },
+        }),
     ]);
+
+    await invalidateMembersCache(invitation.organizationId);
+    await invalidateUserCaches(userUuid);
 
     const org = await prisma.organization.findUnique({
         where: { id: invitation.organizationId },
@@ -427,6 +499,6 @@ export async function acceptInvitation(userUuid: string, token: string) {
         organization: org
             ? { id: org.uuid, name: org.name, slug: org.slug }
             : null,
-        role: invitation.roleCode,
+        role: invitationRoleCode,
     };
 }

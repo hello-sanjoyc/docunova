@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { Cloud, Download, FilePlus2, FileText, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import {
@@ -11,6 +12,7 @@ import {
     searchDocuments,
     type DocumentItem,
 } from "@/lib/api/documents";
+import { getDashboardOverview } from "@/lib/api/user";
 import { formatApiError } from "@/lib/api/errors";
 import {
     handleDownload as handleDownloadDocument,
@@ -18,6 +20,8 @@ import {
 } from "@/lib/utils/documentActions";
 import { DOCUMENT_STATUS_OPTIONS } from "@/components/authenticated/documentFilters";
 import ConfirmActionDialog from "@/components/authenticated/ConfirmActionDialog";
+import { useApiQuery } from "@/lib/query/apiQuery";
+import { queryKeys } from "@/lib/query/queryKeys";
 
 const PAGE_SIZE = 10;
 const DEFAULT_STORAGE_LIMIT_BYTES = 10 * 1024 * 1024 * 1024;
@@ -50,12 +54,16 @@ function bytesToNumber(value: string | null) {
 function formatSizeFromBytes(bytes: number) {
     if (bytes <= 0) return "0 B";
     const units = ["B", "KB", "MB", "GB", "TB"];
-    const power = Math.min(
-        Math.floor(Math.log(bytes) / Math.log(1024)),
-        units.length - 1,
-    );
-    const size = bytes / 1024 ** power;
-    return `${size.toFixed(power === 0 ? 0 : 1)} ${units[power]}`;
+    let size = bytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+
+    const precision = size >= 10 ? 1 : 2;
+    return `${size.toFixed(precision)} ${units[unitIndex]}`;
 }
 
 function statusClass(status: string) {
@@ -75,16 +83,22 @@ function statusClass(status: string) {
     }
 }
 
+function documentClassification(document: DocumentItem) {
+    const metadata = document.metadataJson;
+    if (!metadata || Array.isArray(metadata)) return document.originalFilename;
+
+    const classification = metadata.classification;
+    if (typeof classification === "string" && classification.trim()) {
+        return classification.trim();
+    }
+
+    return document.originalFilename;
+}
+
 export default function DocumentsPageClient() {
+    const queryClient = useQueryClient();
     const searchParams = useSearchParams();
-    const [documents, setDocuments] = useState<DocumentItem[]>([]);
-    const [total, setTotal] = useState(0);
-    const [totalUploaded, setTotalUploaded] = useState(0);
     const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [loading, setLoading] = useState(true);
-    const [listError, setListError] = useState("");
-    const [totalUploadedLoading, setTotalUploadedLoading] = useState(true);
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [deleteError, setDeleteError] = useState("");
@@ -97,69 +111,78 @@ export default function DocumentsPageClient() {
     )
         ? statusFilterFromUrl
         : "";
-
-    const fetchTotalUploaded = useCallback(async () => {
-        setTotalUploadedLoading(true);
-        try {
-            const result = await listDocuments({
+    const documentsQuery = useApiQuery({
+        queryKey: queryKeys.documents.listing({
+            page,
+            pageSize: PAGE_SIZE,
+            query: searchQuery,
+            status: statusFilter,
+        }),
+        queryFn: async () => {
+            const hasSearchQuery = Boolean(searchQuery);
+            if (hasSearchQuery) {
+                return searchDocuments({
+                    query: searchQuery,
+                    queryType: "full_text",
+                    filters: statusFilter ? { status: statusFilter } : undefined,
+                    page,
+                    limit: PAGE_SIZE,
+                });
+            }
+            return listDocuments({
+                page,
+                limit: PAGE_SIZE,
+                status: statusFilter || undefined,
+                sortBy: "uploadedAt",
+                sortOrder: "desc",
+            });
+        },
+    });
+    const totalUploadedQuery = useApiQuery({
+        queryKey: queryKeys.documents.totalUploaded(),
+        queryFn: () =>
+            listDocuments({
                 page: 1,
                 limit: 1,
                 sortBy: "uploadedAt",
                 sortOrder: "desc",
-            });
-            setTotalUploaded(result.total);
-        } catch {
-            // Keep existing count on background refresh failures.
-        } finally {
-            setTotalUploadedLoading(false);
-        }
-    }, []);
-
-    const fetchDocuments = useCallback(async () => {
-        setLoading(true);
-        setListError("");
-        try {
-            const hasSearchQuery = Boolean(searchQuery.trim());
-            const result = hasSearchQuery
-                ? await searchDocuments({
-                      query: searchQuery.trim(),
-                      queryType: "full_text",
-                      filters: statusFilter
-                          ? { status: statusFilter }
-                          : undefined,
-                      page,
-                      limit: PAGE_SIZE,
-                  })
-                : await listDocuments({
-                      page,
-                      limit: PAGE_SIZE,
-                      status: statusFilter || undefined,
-                      sortBy: "uploadedAt",
-                      sortOrder: "desc",
-                  });
-            setDocuments(result.data);
-            setTotal(result.total);
-            setTotalPages(Math.max(1, result.totalPages));
-        } catch (error) {
-            const message = formatApiError(error);
-            setListError(message);
-            toast.error(message);
-        } finally {
-            setLoading(false);
-        }
-    }, [page, searchQuery, statusFilter]);
-
-    useEffect(() => {
-        void fetchDocuments();
-    }, [fetchDocuments]);
+            }),
+    });
+    const storageOverviewQuery = useApiQuery({
+        queryKey: queryKeys.user.dashboardOverview(),
+        queryFn: getDashboardOverview,
+        select: (overview) => {
+            const used = bytesToNumber(overview.storage.usedBytes);
+            const total =
+                bytesToNumber(overview.storage.totalBytes) ||
+                STORAGE_LIMIT_BYTES;
+            return { used, total };
+        },
+    });
 
     useEffect(() => {
         setPage(1);
     }, [searchQuery, statusFilter]);
 
     useEffect(() => {
-        void fetchTotalUploaded();
-    }, [fetchTotalUploaded]);
+        if (!documentsQuery.isError) return;
+        toast.error(formatApiError(documentsQuery.error));
+    }, [documentsQuery.error, documentsQuery.isError]);
+
+    const documents = documentsQuery.data?.data ?? [];
+    const total = documentsQuery.data?.total ?? 0;
+    const totalPages = Math.max(1, documentsQuery.data?.totalPages ?? 1);
+    const loading = documentsQuery.isPending || documentsQuery.isFetching;
+    const listError = documentsQuery.isError
+        ? formatApiError(documentsQuery.error)
+        : "";
+    const totalUploaded = totalUploadedQuery.data?.total ?? 0;
+    const totalUploadedLoading =
+        totalUploadedQuery.isPending || totalUploadedQuery.isFetching;
+    const storageLoading =
+        storageOverviewQuery.isPending || storageOverviewQuery.isFetching;
+    const storageUsedBytes = storageOverviewQuery.data?.used ?? 0;
+    const storageTotalBytes = storageOverviewQuery.data?.total ?? STORAGE_LIMIT_BYTES;
 
     const summaryText = useMemo(() => {
         if (total === 0) return "Showing 0 records";
@@ -168,18 +191,9 @@ export default function DocumentsPageClient() {
         return `Showing ${start}-${end} of ${total} records`;
     }, [page, total]);
 
-    const pageBytes = useMemo(
-        () =>
-            documents.reduce(
-                (sum, item) => sum + bytesToNumber(item.fileSizeBytes),
-                0,
-            ),
-        [documents],
-    );
-
     const usagePercent = Math.min(
         100,
-        Math.round((pageBytes / STORAGE_LIMIT_BYTES) * 100),
+        Math.round((storageUsedBytes / storageTotalBytes) * 100),
     );
 
     async function handleDeleteConfirm() {
@@ -191,7 +205,17 @@ export default function DocumentsPageClient() {
             await deleteDocument(deleteTargetId);
             toast.success("Document deleted");
             setDeleteTargetId(null);
-            await Promise.all([fetchDocuments(), fetchTotalUploaded()]);
+            await Promise.all([
+                queryClient.invalidateQueries({
+                    queryKey: ["documents", "listing"],
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.documents.totalUploaded(),
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.user.dashboardOverview(),
+                }),
+            ]);
         } catch (error) {
             setDeleteError(formatApiError(error));
             toast.error(formatApiError(error));
@@ -259,7 +283,7 @@ export default function DocumentsPageClient() {
 
                 <section className="mb-8 grid grid-cols-1 gap-5 lg:grid-cols-3">
                     <article className="min-h-[160px] rounded-[24px] border border-[#e1dbd1] bg-[#f8f5ef] p-5">
-                        {loading ? (
+                        {storageLoading ? (
                             <div className="animate-pulse">
                                 <div className="h-8 w-44 rounded bg-[#e8e2d8]" />
                                 <div className="h-5 w-full rounded-full bg-[#ece8e2]" />
@@ -287,11 +311,12 @@ export default function DocumentsPageClient() {
                                 </div>
                                 <div className="mt-2 flex items-center justify-between text-sm leading-none text-[#8f867c]">
                                     <span>
-                                        {formatSizeFromBytes(pageBytes)} Used
+                                        {formatSizeFromBytes(storageUsedBytes)}{" "}
+                                        Used
                                     </span>
                                     <span>
                                         {formatSizeFromBytes(
-                                            STORAGE_LIMIT_BYTES,
+                                            storageTotalBytes,
                                         )}{" "}
                                         Total
                                     </span>
@@ -427,9 +452,9 @@ export default function DocumentsPageClient() {
                                                         {document.title}
                                                     </p>
                                                     <p className="mt-1 truncate text-xs text-[#8d847a]">
-                                                        {
-                                                            document.originalFilename
-                                                        }
+                                                        {documentClassification(
+                                                            document,
+                                                        )}
                                                     </p>
                                                 </div>
                                             </td>

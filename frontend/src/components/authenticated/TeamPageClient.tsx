@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     Clock3,
     Shield,
@@ -18,24 +19,20 @@ import {
     OrganizationRoleCode,
 } from "@/lib/api/organizations";
 import { formatApiError } from "@/lib/api/errors";
+import { useApiQuery } from "@/lib/query/apiQuery";
+import { queryKeys } from "@/lib/query/queryKeys";
 
 const TEAM_ROLES: {
     code: OrganizationRoleCode;
     label: string;
     description: string;
 }[] = [
-    {
-        code: "owner",
-        label: "Owner",
-        description: "Founder / Director",
-    },
     { code: "admin", label: "Admin", description: "Operations / Legal Lead" },
     {
         code: "member",
         label: "Member",
         description: "Day-to-day contributor",
     },
-    { code: "viewer", label: "Viewer", description: "Read-only" },
 ];
 
 function statusClass(status: OrganizationMember["status"]) {
@@ -62,22 +59,25 @@ function formatTime(value: string | null) {
 
 function roleLabel(code: string | null | undefined) {
     if (!code) return "Member";
+    if (code === "superadmin") return "Super Admin";
     const match = TEAM_ROLES.find((r) => r.code === code);
     return match?.label ?? code.charAt(0).toUpperCase() + code.slice(1);
 }
 
 function isPrivilegedRole(code: string | null | undefined) {
-    return code === "owner" || code === "admin";
+    return code === "superadmin" || code === "admin";
 }
 
 export default function TeamPageClient() {
-    const [members, setMembers] = useState<OrganizationMember[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState<string>("");
+    const queryClient = useQueryClient();
+    const membersQuery = useApiQuery({
+        queryKey: queryKeys.team.members(),
+        queryFn: () => listMembers({ status: "all", limit: 100 }),
+    });
 
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [selectedRole, setSelectedRole] =
-        useState<OrganizationRoleCode>("owner");
+        useState<OrganizationRoleCode>("admin");
     const [emailsInput, setEmailsInput] = useState("");
     const [sending, setSending] = useState(false);
 
@@ -96,25 +96,12 @@ export default function TeamPageClient() {
     );
     const canSend = parsedEmails.length > 0 && !hasInvalidEmail && !sending;
 
-    const loadMembers = useCallback(async () => {
-        setLoading(true);
-        setLoadError("");
-        try {
-            const result = await listMembers({ status: "all", limit: 100 });
-            setMembers(result.data);
-        } catch (error) {
-            setLoadError(formatApiError(error));
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        void loadMembers();
-    }, [loadMembers]);
+    const members = membersQuery.data?.data ?? [];
+    const loading = membersQuery.isPending || membersQuery.isFetching;
+    const loadError = membersQuery.isError ? formatApiError(membersQuery.error) : "";
 
     function resetInviteForm() {
-        setSelectedRole("owner");
+        setSelectedRole("admin");
         setEmailsInput("");
         setSending(false);
     }
@@ -150,7 +137,9 @@ export default function TeamPageClient() {
             }
 
             closeInviteModal();
-            await loadMembers();
+            await queryClient.invalidateQueries({
+                queryKey: queryKeys.team.members(),
+            });
         } catch (error) {
             toast.error(formatApiError(error));
             setSending(false);
@@ -318,8 +307,8 @@ export default function TeamPageClient() {
                                 <col className="w-[16%]" />
                                 <col className="w-[36%]" />
                                 <col className="w-[16%]" />
-                                <col className="w-[18%]" />
-                                <col className="w-[14%]" />
+                                <col className="w-[22%]" />
+                                <col className="w-[10%]" />
                             </colgroup>
                             <thead>
                                 <tr className="bg-[#f1eee8] text-[11px] uppercase tracking-[0.24em] text-[#b0a79c]">
@@ -335,7 +324,7 @@ export default function TeamPageClient() {
                                     <th className="px-4 py-4 text-left font-medium">
                                         Time
                                     </th>
-                                    <th className="px-4 py-4 text-left font-medium">
+                                    <th className="px-2 py-4 text-center font-medium">
                                         Actions
                                     </th>
                                 </tr>
@@ -438,8 +427,8 @@ export default function TeamPageClient() {
                                                         {formatTime(timestamp)}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-4">
-                                                    <span className="flex items-center gap-4 whitespace-nowrap text-[#b2a89c]">
+                                                <td className="px-2 py-4 text-center">
+                                                    <span className="flex items-center justify-center whitespace-nowrap text-[#b2a89c]">
                                                         <button
                                                             type="button"
                                                             title="Remove"
@@ -473,8 +462,8 @@ export default function TeamPageClient() {
                                 <col className="w-[16%]" />
                                 <col className="w-[36%]" />
                                 <col className="w-[16%]" />
-                                <col className="w-[18%]" />
-                                <col className="w-[14%]" />
+                                <col className="w-[22%]" />
+                                <col className="w-[10%]" />
                             </colgroup>
                             <thead>
                                 <tr className="bg-[#f1eee8] text-[11px] uppercase tracking-[0.24em] text-[#b0a79c]">
@@ -490,7 +479,7 @@ export default function TeamPageClient() {
                                     <th className="px-4 py-4 text-left font-medium">
                                         Time
                                     </th>
-                                    <th className="px-4 py-4 text-left font-medium">
+                                    <th className="px-2 py-4 text-center font-medium">
                                         Actions
                                     </th>
                                 </tr>
@@ -589,8 +578,8 @@ export default function TeamPageClient() {
                                                         {formatTime(timestamp)}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-4">
-                                                    <span className="flex items-center gap-4 whitespace-nowrap text-[#b2a89c]">
+                                                <td className="px-2 py-4 text-center">
+                                                    <span className="flex items-center justify-center whitespace-nowrap text-[#b2a89c]">
                                                         <button
                                                             type="button"
                                                             title="Remove"

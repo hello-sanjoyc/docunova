@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     Clock3,
     Download,
@@ -16,14 +17,14 @@ import { deleteDocument, type DocumentItem } from "@/lib/api/documents";
 import {
     getRecentActivities,
     getRecentActivityStats,
-    type RecentActivityItem,
-    type RecentActivityStats,
 } from "@/lib/api/search";
 import {
     handleDownload as handleDownloadDocument,
     handleDownloadSummaryPdf as handleDownloadSummaryDocumentPdf,
 } from "@/lib/utils/documentActions";
 import ConfirmActionDialog from "@/components/authenticated/ConfirmActionDialog";
+import { useApiQuery } from "@/lib/query/apiQuery";
+import { queryKeys } from "@/lib/query/queryKeys";
 
 function formatDateTime(value: string) {
     const date = new Date(value);
@@ -55,48 +56,37 @@ function statusClass(status: string) {
 }
 
 export default function RecentActivitiesPageClient() {
-    const [items, setItems] = useState<RecentActivityItem[]>([]);
-    const [stats, setStats] = useState<RecentActivityStats | null>(null);
-    const [statsLoading, setStatsLoading] = useState(true);
-    const [loading, setLoading] = useState(true);
-    const [listError, setListError] = useState("");
+    const queryClient = useQueryClient();
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [deleteError, setDeleteError] = useState("");
-
-    const fetchRecentActivities = useCallback(async () => {
-        setLoading(true);
-        setListError("");
-
-        try {
-            const result = await getRecentActivities(20);
-            setItems(result.items);
-        } catch (error) {
-            const message = formatApiError(error);
-            setListError(message);
-            toast.error(message);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    const fetchRecentStats = useCallback(async () => {
-        setStatsLoading(true);
-        try {
-            const result = await getRecentActivityStats();
-            setStats(result);
-        } catch (error) {
-            toast.error(formatApiError(error));
-        } finally {
-            setStatsLoading(false);
-        }
-    }, []);
+    const recentActivitiesQuery = useApiQuery({
+        queryKey: queryKeys.activities.recent(20),
+        queryFn: () => getRecentActivities(20),
+    });
+    const recentStatsQuery = useApiQuery({
+        queryKey: queryKeys.activities.stats(),
+        queryFn: getRecentActivityStats,
+    });
 
     useEffect(() => {
-        void fetchRecentActivities();
-        void fetchRecentStats();
-    }, [fetchRecentActivities, fetchRecentStats]);
+        if (!recentActivitiesQuery.isError) return;
+        toast.error(formatApiError(recentActivitiesQuery.error));
+    }, [recentActivitiesQuery.error, recentActivitiesQuery.isError]);
+
+    useEffect(() => {
+        if (!recentStatsQuery.isError) return;
+        toast.error(formatApiError(recentStatsQuery.error));
+    }, [recentStatsQuery.error, recentStatsQuery.isError]);
+
+    const items = recentActivitiesQuery.data?.items ?? [];
+    const stats = recentStatsQuery.data ?? null;
+    const statsLoading = recentStatsQuery.isPending || recentStatsQuery.isFetching;
+    const loading = recentActivitiesQuery.isPending || recentActivitiesQuery.isFetching;
+    const listError = recentActivitiesQuery.isError
+        ? formatApiError(recentActivitiesQuery.error)
+        : "";
 
     const createdCount = stats?.createdCount ?? 0;
     const searchedCount = stats?.searchedCount ?? 0;
@@ -124,7 +114,14 @@ export default function RecentActivitiesPageClient() {
             await deleteDocument(deleteTargetId);
             toast.success("Document deleted");
             setDeleteTargetId(null);
-            await Promise.all([fetchRecentActivities(), fetchRecentStats()]);
+            await Promise.all([
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.activities.recent(20),
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.activities.stats(),
+                }),
+            ]);
         } catch (error) {
             setDeleteError(formatApiError(error));
             toast.error(formatApiError(error));

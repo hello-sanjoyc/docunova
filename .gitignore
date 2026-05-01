@@ -28,9 +28,11 @@ pnpm-debug.log*
 ############################
 backend/dist/
 backend/build/
+backend/logs/
 backend/.cache/
 backend/.tmp/
 backend/coverage/
+backend/.venv/
 
 ############################
 # Frontend (Next.js)

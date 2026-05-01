@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
+import { createNoIndexMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = createNoIndexMetadata({
   title: "Sign up",
   description: "Create your DocuNova AI account.",
-  robots: {
-    index: false,
-    follow: false,
-  },
-};
+  path: "/signup",
+});
 
 export default function SignupLayout({
   children,

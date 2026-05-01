@@ -1,17 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     Bell,
     Filter,
     Menu,
     RefreshCcw,
     Search,
-    Settings,
     UserRound,
 } from "lucide-react";
 import { DOCUMENT_STATUS_OPTIONS } from "@/components/authenticated/documentFilters";
+import { getProfile, type UserProfile } from "@/lib/api/user";
+import { queryKeys } from "@/lib/query/queryKeys";
+import { useApiQuery } from "@/lib/query/apiQuery";
 
 interface TopbarProps {
     onMenuClick: () => void;
@@ -19,6 +23,7 @@ interface TopbarProps {
 
 export default function Topbar({ onMenuClick }: TopbarProps) {
     const router = useRouter();
+    const queryClient = useQueryClient();
     const searchParams = useSearchParams();
     const [searchDraft, setSearchDraft] = useState(
         () => searchParams.get("q") || "",
@@ -26,6 +31,40 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
     const [statusDraft, setStatusDraft] = useState(
         () => searchParams.get("status") || "",
     );
+    const [failedAvatarUrl, setFailedAvatarUrl] = useState("");
+    const profileQuery = useApiQuery({
+        queryKey: queryKeys.user.profile(),
+        queryFn: getProfile,
+    });
+    const avatarUrl = profileQuery.data?.avatarUrl?.trim() || "";
+
+    useEffect(() => {
+        setSearchDraft(searchParams.get("q") || "");
+        setStatusDraft(searchParams.get("status") || "");
+    }, [searchParams]);
+
+    useEffect(() => {
+        function handleAvatarUpdated(event: Event) {
+            const detail = (event as CustomEvent<{ avatarUrl?: string }>).detail;
+            const nextAvatarUrl = detail?.avatarUrl?.trim() || "";
+            setFailedAvatarUrl("");
+            queryClient.setQueryData<UserProfile | undefined>(
+                queryKeys.user.profile(),
+                (current) =>
+                    current
+                        ? { ...current, avatarUrl: nextAvatarUrl || null }
+                        : current,
+            );
+        }
+
+        window.addEventListener("profile-avatar-updated", handleAvatarUpdated);
+        return () => {
+            window.removeEventListener(
+                "profile-avatar-updated",
+                handleAvatarUpdated,
+            );
+        };
+    }, [queryClient]);
 
     function applyFilters() {
         const params = new URLSearchParams();
@@ -39,9 +78,11 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
     return (
         <header className="h-20 lg:h-16 border-b border-border bg-cream/90 backdrop-blur px-3 sm:px-4 lg:px-6 flex items-center">
             <div className="flex lg:hidden items-center gap-2">
-                <img
+                <Image
                     src="/logo.png"
                     alt="DocuNova AI logo"
+                    width={48}
+                    height={48}
                     className="h-12 w-auto"
                 />
                 <span className="font-medium text-ink text-[24px] tracking-tight">
@@ -125,22 +166,29 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
                 >
                     <Bell size={16} strokeWidth={1.8} aria-hidden="true" />
                 </button>
+
                 <button
                     type="button"
-                    className="text-muted hover:text-ink"
-                    aria-label="Settings"
-                >
-                    <Settings size={16} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-                <button
-                    type="button"
-                    className="w-8 h-8 rounded-full bg-sage-dark text-sage-light flex items-center justify-center"
+                    className="w-8 h-8 rounded-full bg-sage-dark text-sage-light flex items-center justify-center overflow-hidden"
                     aria-label="Profile"
+                    onClick={() => router.push("/myprofile")}
                 >
-                    <UserRound size={15} strokeWidth={2} aria-hidden="true" />
+                    {avatarUrl && failedAvatarUrl !== avatarUrl ? (
+                        <Image
+                            src={avatarUrl}
+                            alt="Profile avatar"
+                            width={32}
+                            height={32}
+                            className="h-full w-full object-cover"
+                            unoptimized
+                            referrerPolicy="no-referrer"
+                            onError={() => setFailedAvatarUrl(avatarUrl)}
+                        />
+                    ) : (
+                        <UserRound size={15} strokeWidth={2} aria-hidden="true" />
+                    )}
                 </button>
             </div>
-
         </header>
     );
 }

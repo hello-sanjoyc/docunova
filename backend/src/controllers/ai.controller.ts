@@ -1,6 +1,11 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { enqueueAiSummarize } from '../queues/ai.queue';
-import { getAiSummary, getAiJobStatus, runAiSummarize } from '../services/aiSummarize.service';
+import {
+    getAiSummary,
+    getAiJobStatus,
+    markDocumentProcessingForSummarize,
+    runAiSummarize,
+} from '../services/aiSummarize.service';
 import { successResponse } from '../utils/response';
 import { createLogger } from '../config/logger';
 
@@ -23,6 +28,10 @@ export async function triggerSummarize(
         mode: 'async',
     });
     logger.info('AI summarize trigger requested');
+    await markDocumentProcessingForSummarize(
+        request.params.documentId,
+        request.user.userId,
+    );
     const jobId = await enqueueAiSummarize(
         request.params.documentId,
         request.user.userId,

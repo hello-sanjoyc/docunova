@@ -112,7 +112,9 @@ export default function UploadZone() {
                     />
                 </svg>
             </div>
-            <p className="font-medium text-ink mb-1">Drop your contract here</p>
+            <p className="font-medium text-ink mb-1">
+                Drop your contract here....
+            </p>
             <p className="text-sm text-muted mb-4">
                 PDF or DOCX — up to 50 pages
             </p>

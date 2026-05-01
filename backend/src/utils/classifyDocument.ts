@@ -9,7 +9,8 @@ export type ClassificationKey =
     | "VENDOR"
     | "SAAS"
     | "CIVIL_CASE"
-    | "CRIMINAL_CASE";
+    | "CRIMINAL_CASE"
+    | "UNKNOWN";
 
 export interface ClassificationResult {
     key: ClassificationKey;
@@ -36,6 +37,7 @@ export const LABELS: Record<ClassificationKey, string> = {
     SAAS: "SaaS / Terms of Service",
     CIVIL_CASE: "Civil Case",
     CRIMINAL_CASE: "Criminal Case",
+    UNKNOWN: "Scanned Document",
 };
 
 const DICTIONARY: Record<ClassificationKey, Term[]> = {
@@ -162,18 +164,36 @@ const DICTIONARY: Record<ClassificationKey, Term[]> = {
         { phrase: "case diary", weight: 4 },
         { phrase: "seizure list", weight: 4 },
     ],
+    // UNKNOWN has no terms — it is only used as a placeholder for scanned docs
+    UNKNOWN: [],
 };
 
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function scoreCategory(normalizedText: string, terms: Term[]): { score: number; matches: number } {
+interface CompiledTerm {
+    pattern: RegExp;
+    weight: number;
+}
+
+// Pre-compiled at module load — avoids recreating RegExp objects on every document classification call.
+const COMPILED_DICTIONARY: Record<ClassificationKey, CompiledTerm[]> = Object.fromEntries(
+    (Object.keys(DICTIONARY) as ClassificationKey[]).map((key) => [
+        key,
+        DICTIONARY[key].map((term) => ({
+            pattern: new RegExp(`\\b${escapeRegex(term.phrase.toLowerCase())}\\b`, "g"),
+            weight: term.weight,
+        })),
+    ]),
+) as Record<ClassificationKey, CompiledTerm[]>;
+
+function scoreCategory(normalizedText: string, terms: CompiledTerm[]): { score: number; matches: number } {
     let score = 0;
     let matches = 0;
     for (const term of terms) {
-        const pattern = new RegExp(`\\b${escapeRegex(term.phrase.toLowerCase())}\\b`, "g");
-        const hits = normalizedText.match(pattern);
+        term.pattern.lastIndex = 0;
+        const hits = normalizedText.match(term.pattern);
         if (hits && hits.length > 0) {
             score += term.weight * hits.length;
             matches += hits.length;
@@ -187,8 +207,8 @@ export function classifyDocument(text: string): ClassificationResult | null {
     const normalized = text.toLowerCase();
 
     let best: ClassificationResult | null = null;
-    for (const key of Object.keys(DICTIONARY) as ClassificationKey[]) {
-        const { score, matches } = scoreCategory(normalized, DICTIONARY[key]);
+    for (const key of Object.keys(COMPILED_DICTIONARY) as ClassificationKey[]) {
+        const { score, matches } = scoreCategory(normalized, COMPILED_DICTIONARY[key]);
         if (!best || score > best.score) {
             best = { key, label: LABELS[key], score, matches };
         }

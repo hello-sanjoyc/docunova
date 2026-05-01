@@ -36,6 +36,8 @@ export const env = {
   REDIS_USERNAME: process.env.REDIS_USERNAME || '',
   REDIS_PASSWORD: process.env.REDIS_PASSWORD || '',
   REDIS_DB: parseInt(process.env.REDIS_DB || '0', 10),
+  REDIS_TLS: process.env.REDIS_TLS === 'true',
+  REDIS_CONNECT_TIMEOUT_MS: parseInt(process.env.REDIS_CONNECT_TIMEOUT_MS || '5000', 10),
 
   // Recency window (in days) for GET /search/recent — recently created +
   // recently searched documents within this window are returned.
@@ -64,6 +66,7 @@ export const env = {
   // Storage provider: "s3" | "aws" | "gcp" | "azure"  (currently only s3 is implemented)
   STORAGE_PROVIDER: (process.env.STORAGE_PROVIDER || 's3') as string,
   DOCUMENT_STORAGE_PATH: process.env.DOCUMENT_STORAGE_PATH || 'documents',
+  PROFILE_STORAGE_PATH: process.env.PROFILE_STORAGE_PATH || 'profiles',
 
   // S3 / S3-compatible object storage
   S3_ENDPOINT: process.env.S3_ENDPOINT as string,

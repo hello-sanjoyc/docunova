@@ -18,6 +18,7 @@ import {
     DocumentListQuery,
     UpdateDocumentBody,
 } from "../models/document.model";
+import { checkUsage, recordUsage } from "../services/usage.service";
 import crypto from "crypto";
 import { createLogger } from "../config/logger";
 
@@ -43,6 +44,41 @@ export async function upload(request: FastifyRequest, reply: FastifyReply) {
         classification: validated.classification.label,
     });
 
+    const usageCheck = await checkUsage(request.user.userId, {
+        page_count: validated.pageCount,
+        ocr_page_count: validated.needsOcr ? validated.pageCount : 0,
+    });
+    if (!usageCheck.allowed) {
+        reply.status(403).send({
+            statusCode: 403,
+            success: false,
+            message: usageCheck.reason ?? "Upload exceeds current plan usage.",
+            data: usageCheck,
+        });
+        return;
+    }
+    const planSlug = usageCheck.planLimit.planSlug;
+    const isPdf = validated.extension === "pdf";
+    const isDocx = validated.extension === "docx";
+    if (planSlug === "starter" && !isPdf) {
+        reply.status(403).send({
+            statusCode: 403,
+            success: false,
+            message: "Starter supports PDF uploads only.",
+            data: usageCheck,
+        });
+        return;
+    }
+    if (planSlug !== "starter" && !isPdf && !isDocx) {
+        reply.status(403).send({
+            statusCode: 403,
+            success: false,
+            message: "This plan supports PDF and DOCX uploads only.",
+            data: usageCheck,
+        });
+        return;
+    }
+
     const doc = await uploadDocument({
         userId: request.user.userId,
         originalFilename: validated.filename,
@@ -54,10 +90,17 @@ export async function upload(request: FastifyRequest, reply: FastifyReply) {
         buffer: validated.buffer,
         pageCount: validated.pageCount,
         extractedText: validated.extractedText,
+        needsOcr: validated.needsOcr,
         classification: validated.classification,
         title: validated.fields.title,
         description: validated.fields.description,
         folderId: validated.fields.folderId,
+    });
+
+    await recordUsage(request.user.userId, {
+        document_id: String(doc.id),
+        pages_used: validated.pageCount,
+        ocr_pages_used: validated.needsOcr ? validated.pageCount : 0,
     });
 
     logger.info("Upload request completed", {

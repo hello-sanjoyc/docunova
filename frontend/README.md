@@ -46,3 +46,124 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+## Frontend Folder Structure
+
+```text
+frontend/
+├── .env.example
+├── README.md
+├── next.config.ts
+├── eslint.config.mjs
+├── postcss.config.mjs
+├── package.json
+├── package-lock.json
+├── tsconfig.json
+├── next-env.d.ts
+├── public/                   # static assets served by Next.js
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── logo.png
+│   ├── next.svg
+│   ├── opengraph-image.png
+│   ├── twitter-image.png
+│   ├── vercel.svg
+│   └── window.svg
+└── src/                      # application source
+    ├── app/                  # App Router routes + metadata files
+    │   ├── globals.css
+    │   ├── icon.png
+    │   ├── icon.svg
+    │   ├── layout.tsx
+    │   ├── opengraph-image.tsx
+    │   ├── robots.ts
+    │   ├── sitemap.ts
+    │   ├── twitter-image.tsx
+    │   ├── (public)/         # unauthenticated pages
+    │   │   ├── layout.tsx
+    │   │   ├── page.tsx
+    │   │   ├── forgot-password/page.tsx
+    │   │   ├── reset-password/page.tsx
+    │   │   ├── verify-email/page.tsx
+    │   │   ├── verification-pending/page.tsx
+    │   │   ├── login/
+    │   │   │   ├── layout.tsx
+    │   │   │   └── page.tsx
+    │   │   ├── signup/
+    │   │   │   ├── layout.tsx
+    │   │   │   └── page.tsx
+    │   │   ├── invitations/[token]/
+    │   │   │   ├── layout.tsx
+    │   │   │   └── page.tsx
+    │   │   └── oauth/google/callback/page.tsx
+    │   └── (authenticated)/  # authenticated app pages
+    │       ├── layout.tsx
+    │       ├── dashboard/
+    │       │   ├── loading.tsx
+    │       │   └── page.tsx
+    │       ├── documents/
+    │       │   ├── loading.tsx
+    │       │   ├── page.tsx
+    │       │   └── new/
+    │       │       ├── loading.tsx
+    │       │       └── page.tsx
+    │       ├── myprofile/
+    │       │   ├── loading.tsx
+    │       │   └── page.tsx
+    │       ├── recent-activities/
+    │       │   ├── loading.tsx
+    │       │   └── page.tsx
+    │       ├── team/
+    │       │   ├── loading.tsx
+    │       │   └── page.tsx
+    │       └── trash/
+    │           ├── loading.tsx
+    │           └── page.tsx
+    ├── components/           # shared and feature UI components
+    │   ├── ToastProvider.tsx
+    │   ├── authenticated/
+    │   │   ├── AuthenticatedShell.tsx
+    │   │   ├── ConfirmActionDialog.tsx
+    │   │   ├── ContentArea.tsx
+    │   │   ├── DashboardPageClient.tsx
+    │   │   ├── DocumentsNewPageClient.tsx
+    │   │   ├── DocumentsPageClient.tsx
+    │   │   ├── RecentActivitiesPageClient.tsx
+    │   │   ├── Sidebar.tsx
+    │   │   ├── TeamPageClient.tsx
+    │   │   ├── Topbar.tsx
+    │   │   ├── TrashPageClient.tsx
+    │   │   └── documentFilters.ts
+    │   └── public/
+    │       ├── BriefCardPreview.tsx
+    │       ├── FAQ.tsx
+    │       ├── Features.tsx
+    │       ├── FinalCTA.tsx
+    │       ├── Footer.tsx
+    │       ├── Hero.tsx
+    │       ├── HowItWorks.tsx
+    │       ├── MoveToUpButton.tsx
+    │       ├── Navbar.tsx
+    │       ├── Pricing.tsx
+    │       ├── ScrollReveal.tsx
+    │       ├── SocialProof.tsx
+    │       ├── StatsBar.tsx
+    │       └── UploadZone.tsx
+    └── lib/                  # API clients, helpers and utilities
+        ├── seo.ts
+        ├── api/
+        │   ├── auth.ts
+        │   ├── client.ts
+        │   ├── documents.ts
+        │   ├── endpoints.ts
+        │   ├── errors.ts
+        │   ├── organizations.ts
+        │   ├── request.ts
+        │   ├── search.ts
+        │   ├── session.ts
+        │   ├── twoFactor.ts
+        │   └── user.ts
+        └── utils/
+            └── documentActions.ts
+```

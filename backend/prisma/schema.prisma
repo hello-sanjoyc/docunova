@@ -82,6 +82,31 @@ enum OrganizationInvitationStatus {
   @@map("organization_invitation_status")
 }
 
+enum LimitPeriod {
+  LIFETIME @map("lifetime")
+  MONTHLY  @map("monthly")
+  YEARLY   @map("yearly")
+  NONE     @map("none")
+
+  @@map("limit_period")
+}
+
+enum SubscriptionStatus {
+  ACTIVE    @map("active")
+  TRIALING  @map("trialing")
+  CANCELLED @map("cancelled")
+  EXPIRED   @map("expired")
+
+  @@map("subscription_status")
+}
+
+enum BillingCycle {
+  MONTHLY @map("monthly")
+  YEARLY  @map("yearly")
+
+  @@map("billing_cycle")
+}
+
 model Organization {
   id              BigInt   @id @default(autoincrement()) @db.BigInt
   uuid            String   @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -123,8 +148,12 @@ model User {
   lastName         String?      @map("last_name") @db.VarChar(120)
   fullName         String?      @map("full_name") @db.VarChar(255)
   phone            String?      @db.VarChar(30)
+  countryCode      String?      @map("country_code") @db.VarChar(2)
+  regionCode       String?      @map("region_code") @db.VarChar(20)
   avatarUrl        String?      @map("avatar_url")
   emailVerifiedAt  DateTime?    @map("email_verified_at") @db.Timestamptz(6)
+  emailDigestEnabled Boolean    @default(true) @map("email_digest_enabled")
+  securityAlertsEnabled Boolean @default(true) @map("security_alerts_enabled")
   twoFactorEnabled Boolean      @default(false) @map("two_factor_enabled")
   twoFactorSecret  String?      @map("two_factor_secret")
   status           UserStatus   @default(ACTIVE)
@@ -150,12 +179,109 @@ model User {
   documentAccessHistory           DocumentAccessHistory[]
   aiJobsTriggered                 AiJob[]
   searchHistory                   SearchHistory[]
+  subscriptions                   Subscription[]
+  usageRecords                    UsageRecord[]
 
   @@unique([organizationId, email], map: "uq_users_org_email")
   @@index([organizationId, email], map: "idx_users_org_email")
+  @@index([countryCode], map: "idx_users_country_code")
+  @@index([regionCode], map: "idx_users_region_code")
   @@index([status], map: "idx_users_status")
   @@index([deletedAt], map: "idx_users_deleted_at")
   @@map("users")
+}
+
+model Plan {
+  id          BigInt   @id @default(autoincrement()) @db.BigInt
+  slug        String   @unique @db.VarChar(100)
+  name        String   @db.VarChar(150)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  features      PlanFeature[]
+  limits        PlanLimit[]
+  prices        PlanPrice[]
+  subscriptions Subscription[]
+
+  @@index([isActive, sortOrder], map: "idx_plans_active_sort")
+  @@map("plans")
+}
+
+model Feature {
+  id          BigInt   @id @default(autoincrement()) @db.BigInt
+  key         String   @unique @db.VarChar(150)
+  name        String   @db.VarChar(150)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  plans PlanFeature[]
+
+  @@map("features")
+}
+
+model PlanFeature {
+  id        BigInt  @id @default(autoincrement()) @db.BigInt
+  planId    BigInt  @map("plan_id") @db.BigInt
+  featureId BigInt  @map("feature_id") @db.BigInt
+  included  Boolean @default(true)
+
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  feature Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureId], map: "uq_plan_features_plan_feature")
+  @@index([featureId], map: "idx_plan_features_feature")
+  @@map("plan_features")
+}
+
+model PlanLimit {
+  id     BigInt      @id @default(autoincrement()) @db.BigInt
+  planId BigInt      @map("plan_id") @db.BigInt
+  key    String      @db.VarChar(150)
+  value  Decimal     @db.Decimal(18, 4)
+  period LimitPeriod @default(NONE)
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, key], map: "uq_plan_limits_plan_key")
+  @@index([key], map: "idx_plan_limits_key")
+  @@map("plan_limits")
+}
+
+model Region {
+  id           BigInt   @id @default(autoincrement()) @db.BigInt
+  code         String   @unique @db.VarChar(20)
+  name         String   @db.VarChar(150)
+  currencyCode String   @map("currency_code") @db.VarChar(10)
+
+  prices        PlanPrice[]
+  subscriptions Subscription[]
+
+  @@map("regions")
+}
+
+model PlanPrice {
+  id                 BigInt   @id @default(autoincrement()) @db.BigInt
+  planId             BigInt   @map("plan_id") @db.BigInt
+  regionCode         String   @map("region_code") @db.VarChar(20)
+  currencyCode       String   @map("currency_code") @db.VarChar(10)
+  monthlyPrice       Decimal  @default(0) @map("monthly_price") @db.Decimal(18, 4)
+  yearlyPrice        Decimal  @default(0) @map("yearly_price") @db.Decimal(18, 4)
+  extraPagePrice     Decimal  @default(0) @map("extra_page_price") @db.Decimal(18, 4)
+  extraOcrPagePrice  Decimal  @default(0) @map("extra_ocr_page_price") @db.Decimal(18, 4)
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  region Region @relation(fields: [regionCode], references: [code], onDelete: Restrict)
+
+  @@unique([planId, regionCode], map: "uq_plan_prices_plan_region")
+  @@index([regionCode, isActive], map: "idx_plan_prices_region_active")
+  @@map("plan_prices")
 }
 
 model Role {
@@ -239,7 +365,7 @@ model UserSession {
   deviceType       String?              @map("device_type") @db.VarChar(50)
   browser          String?              @db.VarChar(100)
   os               String?              @db.VarChar(100)
-  ipAddress        Unsupported("inet")? @map("ip_address")
+  ipAddress        String?              @map("ip_address") @db.VarChar(45)
   userAgent        String?              @map("user_agent")
   status           SessionStatus        @default(ACTIVE)
   lastSeenAt       DateTime?            @map("last_seen_at") @db.Timestamptz(6)
@@ -347,6 +473,7 @@ model Document {
   ocrResult       DocumentOcrResult?
   aiSummaries     DocumentAiSummary[]
   classifications DocumentClassification[]
+  usageRecords    UsageRecord[]
 
   @@index([organizationId, folderId], map: "idx_documents_org_folder")
   @@index([ownerUserId], map: "idx_documents_owner")
@@ -356,6 +483,55 @@ model Document {
   @@index([currentVersionId], map: "idx_documents_current_version")
   @@index([metadataJson], type: Gin, map: "idx_documents_metadata_gin")
   @@map("documents")
+}
+
+model Subscription {
+  id                 BigInt             @id @default(autoincrement()) @db.BigInt
+  userId             BigInt             @map("user_id") @db.BigInt
+  planId             BigInt             @map("plan_id") @db.BigInt
+  regionCode         String             @map("region_code") @db.VarChar(20)
+  status             SubscriptionStatus @default(ACTIVE)
+  billingCycle       BillingCycle       @map("billing_cycle")
+  startedAt          DateTime           @default(now()) @map("started_at") @db.Timestamptz(6)
+  currentPeriodStart DateTime           @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd   DateTime           @map("current_period_end") @db.Timestamptz(6)
+  cancelledAt        DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         Plan          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  region       Region        @relation(fields: [regionCode], references: [code], onDelete: Restrict)
+  usageRecords UsageRecord[]
+
+  @@index([userId, status], map: "idx_subscriptions_user_status")
+  @@index([planId], map: "idx_subscriptions_plan")
+  @@index([regionCode], map: "idx_subscriptions_region")
+  @@index([currentPeriodEnd], map: "idx_subscriptions_period_end")
+  @@map("subscriptions")
+}
+
+model UsageRecord {
+  id             BigInt   @id @default(autoincrement()) @db.BigInt
+  userId         BigInt   @map("user_id") @db.BigInt
+  subscriptionId BigInt?  @map("subscription_id") @db.BigInt
+  documentId     BigInt?  @map("document_id") @db.BigInt
+  pagesUsed      Int      @default(0) @map("pages_used")
+  ocrPagesUsed   Int      @default(0) @map("ocr_pages_used")
+  // Stored for future internal cost analytics. Token pricing is intentionally
+  // not exposed to customers while billing is page-based.
+  tokensUsed     Int?     @map("tokens_used")
+  usageMonth     DateTime @map("usage_month") @db.Date
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  document     Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, usageMonth], map: "idx_usage_records_user_month")
+  @@index([subscriptionId, usageMonth], map: "idx_usage_records_subscription_month")
+  @@index([documentId], map: "idx_usage_records_document")
+  @@map("usage_records")
 }
 
 model DocumentVersion {
@@ -434,16 +610,28 @@ model AiJob {
   @@map("ai_jobs")
 }
 
+enum OcrStatus {
+  PENDING    @map("pending")
+  PROCESSING @map("processing")
+  COMPLETED  @map("completed")
+  FAILED     @map("failed")
+  SKIPPED    @map("skipped")
+
+  @@map("ocr_status")
+}
+
 model DocumentOcrResult {
-  id               BigInt   @id @default(autoincrement()) @db.BigInt
-  documentId       BigInt   @unique(map: "uq_document_ocr_result") @map("document_id") @db.BigInt
-  aiJobId          BigInt?  @map("ai_job_id") @db.BigInt
-  extractedText    String?  @map("extracted_text")
-  pageTextJson     Json     @default("[]") @map("page_text_json")
-  confidenceScore  Decimal? @map("confidence_score") @db.Decimal(5, 2)
-  languageDetected String?  @map("language_detected") @db.VarChar(20)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  id               BigInt    @id @default(autoincrement()) @db.BigInt
+  documentId       BigInt    @unique(map: "uq_document_ocr_result") @map("document_id") @db.BigInt
+  aiJobId          BigInt?   @map("ai_job_id") @db.BigInt
+  extractedText    String?   @map("extracted_text")
+  pageTextJson     Json      @default("[]") @map("page_text_json")
+  confidenceScore  Decimal?  @map("confidence_score") @db.Decimal(5, 2)
+  languageDetected String?   @map("language_detected") @db.VarChar(20)
+  ocrStatus        OcrStatus @default(PENDING) @map("ocr_status")
+  ocrMethod        String?   @map("ocr_method") @db.VarChar(50)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
   aiJob    AiJob?   @relation(fields: [aiJobId], references: [id], onDelete: SetNull)

@@ -8,6 +8,7 @@ import prismaPlugin from "./plugins/prisma";
 import jwtPlugin from "./plugins/jwt";
 import emailWorkerPlugin from "./plugins/emailWorker";
 import aiWorkerPlugin from "./plugins/aiWorker";
+import ocrWorkerPlugin from "./plugins/ocrWorker";
 import { errorHandler } from "./middlewares/errorHandler";
 import registerRoutes from "./routes";
 
@@ -81,6 +82,7 @@ export async function buildApp() {
     await fastify.register(jwtPlugin);
     await fastify.register(emailWorkerPlugin);
     await fastify.register(aiWorkerPlugin);
+    await fastify.register(ocrWorkerPlugin);
 
     // Routes
     await registerRoutes(fastify);

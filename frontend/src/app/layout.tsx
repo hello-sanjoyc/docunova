@@ -22,12 +22,16 @@ import type { Metadata } from "next";
 import { DM_Sans, Montserrat } from "next/font/google";
 import "./globals.css";
 import {
+    DEFAULT_OG_IMAGE,
+    DEFAULT_TITLE,
+    DEFAULT_TWITTER_IMAGE,
     SITE_DESCRIPTION,
     SITE_KEYWORDS,
     SITE_NAME,
     SITE_URL,
 } from "@/lib/seo";
 import ToastProvider from "@/components/ToastProvider";
+import QueryProvider from "@/components/QueryProvider";
 
 const montserrat = Montserrat({
     weight: ["400", "500", "600", "700"],
@@ -46,7 +50,7 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
     metadataBase: new URL(SITE_URL),
     title: {
-        default: `${SITE_NAME} | Understand any contract in 60 seconds`,
+        default: `${SITE_NAME} | ${DEFAULT_TITLE}`,
         template: `%s | ${SITE_NAME}`,
     },
     description: SITE_DESCRIPTION,
@@ -65,22 +69,15 @@ export const metadata: Metadata = {
         locale: "en_US",
         url: "/",
         siteName: SITE_NAME,
-        title: `${SITE_NAME} | Understand any contract in 60 seconds`,
+        title: `${SITE_NAME} | ${DEFAULT_TITLE}`,
         description: SITE_DESCRIPTION,
-        images: [
-            {
-                url: "/opengraph-image",
-                width: 1200,
-                height: 630,
-                alt: `${SITE_NAME} social preview`,
-            },
-        ],
+        images: [DEFAULT_OG_IMAGE],
     },
     twitter: {
         card: "summary_large_image",
-        title: `${SITE_NAME} | Understand any contract in 60 seconds`,
+        title: `${SITE_NAME} | ${DEFAULT_TITLE}`,
         description: SITE_DESCRIPTION,
-        images: ["/twitter-image"],
+        images: [DEFAULT_TWITTER_IMAGE],
     },
     robots: {
         index: true,
@@ -108,8 +105,10 @@ export default function RootLayout({
             className={`${montserrat.variable} ${dmSans.variable}`}
         >
             <body>
-                {children}
-                <ToastProvider />
+                <QueryProvider>
+                    {children}
+                    <ToastProvider />
+                </QueryProvider>
             </body>
         </html>
     );

@@ -4,10 +4,10 @@ import { createLogger } from "../config/logger";
 
 // ── Provider base URLs ────────────────────────────────────────────────────────
 
-const PROVIDER_BASE_URLS: Record<string, string> = {
+/* const PROVIDER_BASE_URLS: Record<string, string> = {
     groq: "https://api.groq.com/openai/v1",
     openai: "https://api.openai.com/v1",
-};
+}; */
 const logger = createLogger({ context: "ai-service" });
 
 // ── Summary schema (mirrors the requested response shape) ─────────────────────
@@ -30,7 +30,14 @@ export interface DocumentSummary {
     parties: string | null;
     effective_date: string | null;
     obligations: string | null;
+    indemnity: string | null;
+    IP: string | null;
+    confidentiality: string | null;
     payment: string | null;
+    renewal_date: string | null;
+    renewal_terms: string | null;
+    total_spend: number | null;
+    spend_currency: string | null;
     red_flags: string | null;
     actions: string | null;
     summary: string;
@@ -118,14 +125,22 @@ function parseModelJson(raw: string): Partial<DocumentSummary> {
     }
 }
 
+let _openaiClient: OpenAI | null = null;
+
+function getOpenAiClient(): OpenAI {
+    if (!_openaiClient) {
+        _openaiClient = new OpenAI({
+            apiKey: env.AI_MODEL_API_KEY,
+            baseURL: env.AI_BASE_URL ?? undefined,
+        });
+    }
+    return _openaiClient;
+}
+
 async function callAiModel(options: CallOptions): Promise<string> {
     const provider = env.AI_PROVIDER;
 
-    // Resolve base URL: explicit override → provider default → SDK default (OpenAI)
-    const baseURL =
-        env.AI_BASE_URL ?? PROVIDER_BASE_URLS[provider] ?? undefined;
-
-    const client = new OpenAI({ apiKey: env.AI_MODEL_API_KEY, baseURL });
+    const client = getOpenAiClient();
     logger.info("AI model call started", {
         provider,
         model: env.AI_MODEL_NAME,
@@ -176,7 +191,12 @@ Extraction requirements:
 - parties involved
 - effective date / term
 - key obligations
+- indemnity (if available in the document text)
+- IP  (if available in the document text)
+- confidentiality  (if available in the document text)
 - payment terms
+- renewal date / renewal terms (if available in the document text)
+- total contract spend as a numeric amount and currency (only if the full contract total can be determined from the document text; otherwise return null)
 - red flags (auto-renewal, exclusivity, penalties, vague language, liability issues, etc.)
 - recommended business actions
 - "summary": a plain-English overview of the document in AT MOST 200 words (never exceed 200 words; aim for 150-200). It must be a single continuous paragraph, cover the document's purpose, parties, main obligations, payment, and notable risks, and be safe to show directly to end users.
@@ -195,7 +215,14 @@ Output must EXACTLY match this JSON schema:
   "parties": string | null,
   "effective_date": string | null,
   "obligations": string | null,
+  "indemnity": string | null, 
+  "IP": string | null,
+  "confidentiality": string | null,
   "payment": string | null,
+  "renewal_date": string | null,
+  "renewal_terms": string | null,
+  "total_spend": number | null,
+  "spend_currency": string | null,
   "red_flags": string | null,
   "actions": string | null,
   "risk_items": [
@@ -265,7 +292,18 @@ export async function generateSummary(
         parties: parsed.parties ?? null,
         effective_date: parsed.effective_date ?? null,
         obligations: parsed.obligations ?? null,
+        indemnity: parsed.indemnity ?? null,
+        IP: parsed.IP ?? null,
+        confidentiality: parsed.confidentiality ?? null,
         payment: parsed.payment ?? null,
+        renewal_date: parsed.renewal_date ?? null,
+        renewal_terms: parsed.renewal_terms ?? null,
+        total_spend:
+            typeof parsed.total_spend === "number" &&
+            Number.isFinite(parsed.total_spend)
+                ? parsed.total_spend
+                : null,
+        spend_currency: parsed.spend_currency ?? null,
         red_flags: parsed.red_flags ?? null,
         actions: parsed.actions ?? null,
         summary: enforceWordLimit(parsed.summary ?? "", 200),
