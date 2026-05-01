@@ -24,11 +24,11 @@ function GoogleOAuthCallbackPageContent() {
   const params = useSearchParams();
 
   useEffect(() => {
-    const accessToken = params.get('accessToken');
-    const refreshToken = params.get('refreshToken');
-    const target = safeTargetPath(params.get('target'));
-    const email = params.get('email') || '';
-    const verified = params.get('verified');
+    const accessToken = params?.get('accessToken');
+    const refreshToken = params?.get('refreshToken');
+    const target = safeTargetPath(params?.get('target') ?? null);
+    const email = params?.get('email') || '';
+    const verified = params?.get('verified');
 
     if (!accessToken || !refreshToken) {
       clearAuthSession();

@@ -122,10 +122,10 @@ export default function SignupPage() {
 function SignupPageInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const nextPath = safeNextPath(searchParams.get("next"));
-    const prefilledEmail = searchParams.get("email") ?? "";
-    const oauthError = searchParams.get("oauthError");
-    const oauthReason = searchParams.get("oauthReason");
+    const nextPath = safeNextPath(searchParams?.get("next") ?? null);
+    const prefilledEmail = searchParams?.get("email") ?? "";
+    const oauthError = searchParams?.get("oauthError");
+    const oauthReason = searchParams?.get("oauthReason");
     const oauthMessage = oauthError
         ? `Google sign-up failed (${oauthError})${oauthReason ? `: ${oauthReason}` : "."}`
         : "";

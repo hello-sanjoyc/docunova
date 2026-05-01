@@ -14,7 +14,7 @@ export default function VerificationPendingPage() {
 
 function VerificationPendingPageContent() {
   const params = useSearchParams();
-  const email = params.get('email');
+  const email = params?.get('email');
 
   return (
     <div className="min-h-screen bg-cream flex items-center justify-center px-6">

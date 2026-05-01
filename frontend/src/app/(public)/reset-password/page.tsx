@@ -17,7 +17,7 @@ export default function ResetPasswordPage() {
 
 function ResetPasswordPageContent() {
   const params = useSearchParams();
-  const token = useMemo(() => params.get('token') ?? '', [params]);
+  const token = useMemo(() => params?.get('token') ?? '', [params]);
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');

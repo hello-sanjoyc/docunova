@@ -17,7 +17,7 @@ export default function VerifyEmailPage() {
 
 function VerifyEmailPageContent() {
   const params = useSearchParams();
-  const token = useMemo(() => params.get('token') ?? '', [params]);
+  const token = useMemo(() => params?.get('token') ?? '', [params]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');

@@ -26,10 +26,10 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
     const queryClient = useQueryClient();
     const searchParams = useSearchParams();
     const [searchDraft, setSearchDraft] = useState(
-        () => searchParams.get("q") || "",
+        () => searchParams?.get("q") || "",
     );
     const [statusDraft, setStatusDraft] = useState(
-        () => searchParams.get("status") || "",
+        () => searchParams?.get("status") || "",
     );
     const [failedAvatarUrl, setFailedAvatarUrl] = useState("");
     const profileQuery = useApiQuery({
@@ -39,8 +39,8 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
     const avatarUrl = profileQuery.data?.avatarUrl?.trim() || "";
 
     useEffect(() => {
-        setSearchDraft(searchParams.get("q") || "");
-        setStatusDraft(searchParams.get("status") || "");
+        setSearchDraft(searchParams?.get("q") || "");
+        setStatusDraft(searchParams?.get("status") || "");
     }, [searchParams]);
 
     useEffect(() => {

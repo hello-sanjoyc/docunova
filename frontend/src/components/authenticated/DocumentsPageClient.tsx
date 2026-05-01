@@ -104,8 +104,8 @@ export default function DocumentsPageClient() {
     const [deleteError, setDeleteError] = useState("");
 
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
-    const searchQuery = (searchParams.get("q") || "").trim();
-    const statusFilterFromUrl = searchParams.get("status") || "";
+    const searchQuery = (searchParams?.get("q") || "").trim();
+    const statusFilterFromUrl = searchParams?.get("status") || "";
     const statusFilter = DOCUMENT_STATUS_OPTIONS.some(
         (option) => option.value === statusFilterFromUrl,
     )
