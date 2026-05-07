@@ -217,7 +217,7 @@ export async function twoFactorDisable(
 }
 
 export async function googleStart(
-    request: FastifyRequest<{ Querystring: { source?: string; target?: string } }>,
+    request: FastifyRequest<{ Querystring: { source?: string; target?: string; country_code?: string } }>,
     reply: FastifyReply,
 ) {
     const missingEnv = [
@@ -242,12 +242,18 @@ export async function googleStart(
     const source = request.query.source === "signup" ? "signup" : "login";
     const rawTarget = request.query.target || "/dashboard";
     const target = rawTarget.startsWith("/") ? rawTarget : "/dashboard";
+    const countryCode =
+        typeof request.query.country_code === "string" &&
+        /^[A-Za-z]{2}$/.test(request.query.country_code)
+            ? request.query.country_code.toUpperCase()
+            : undefined;
 
     const state = request.server.jwt.sign(
         {
             purpose: "google_oauth",
             source,
             target,
+            country_code: countryCode,
         } as unknown as import("../types").JwtPayload,
         { expiresIn: "10m" },
     );
@@ -288,11 +294,13 @@ export async function googleCallback(
     }
 
     let target = "/dashboard";
+    let countryCode: string | undefined;
     try {
         const statePayload = (await request.server.jwt.verify(request.query.state)) as {
             purpose?: string;
             target?: string;
             source?: string;
+            country_code?: string;
         };
 
         if (statePayload.purpose !== "google_oauth") {
@@ -303,6 +311,10 @@ export async function googleCallback(
 
         if (statePayload.target && statePayload.target.startsWith("/")) {
             target = statePayload.target;
+        }
+
+        if (statePayload.country_code && /^[A-Za-z]{2}$/.test(statePayload.country_code)) {
+            countryCode = statePayload.country_code.toUpperCase();
         }
     } catch {
         const redirect = failureRedirect();
@@ -315,7 +327,7 @@ export async function googleCallback(
         const auth = await authenticateGoogleUser(request.query.code, {
             ipAddress: request.ip,
             userAgent: request.headers["user-agent"],
-        }, { source });
+        }, { source, countryCode });
 
         const accessToken = signAccessToken(request, auth.user);
         const callbackRedirect = new URL("/oauth/google/callback", frontendUrl);

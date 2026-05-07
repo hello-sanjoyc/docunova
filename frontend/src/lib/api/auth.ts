@@ -5,6 +5,7 @@ import { API_BASE_URL } from './client';
 export interface LoginRequest {
   email: string;
   password: string;
+  country_code?: string;
 }
 
 export interface RegisterRequest {
@@ -14,6 +15,7 @@ export interface RegisterRequest {
   phone?: string;
   email: string;
   password: string;
+  country_code?: string;
 }
 
 export interface ForgotPasswordRequest {
@@ -132,9 +134,16 @@ export function verifyEmail(payload: VerifyEmailRequest) {
   });
 }
 
-export function getGoogleOAuthUrl(source: 'login' | 'signup' = 'login', target = '/dashboard') {
+export function getGoogleOAuthUrl(
+  source: 'login' | 'signup' = 'login',
+  target = '/dashboard',
+  countryCode?: string | null,
+) {
   const url = new URL(API_ENDPOINTS.AUTH.GOOGLE, API_BASE_URL);
   url.searchParams.set('source', source);
   url.searchParams.set('target', target);
+  if (countryCode) {
+    url.searchParams.set('country_code', countryCode);
+  }
   return url.toString();
 }

@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { formatApiError } from "@/lib/api/errors";
 import { getPricing } from "@/lib/api/pricing";
 import type { BillingCycle } from "@/lib/api/pricing";
+import {
+    detectPricingCountryCode,
+    readStoredPricingCountryCode,
+} from "@/lib/api/pricingCountry";
 import { useApiQuery } from "@/lib/query/apiQuery";
 import { queryKeys } from "@/lib/query/queryKeys";
 import BillingCycleToggle from "./BillingCycleToggle";
@@ -15,30 +19,10 @@ interface PricingSectionProps {
     className?: string;
 }
 
-const PRICING_COUNTRY_CODE_KEY = "docunova.pricing.countryCode";
-
 type CountryState = {
     code: string | null;
     ready: boolean;
 };
-
-function normalizeCountryCode(value: unknown) {
-    if (typeof value !== "string") return null;
-    const normalized = value.trim().toUpperCase();
-    return /^[A-Z]{2}$/.test(normalized) ? normalized : null;
-}
-
-function readStoredCountryCode() {
-    if (typeof window === "undefined") return null;
-
-    try {
-        return normalizeCountryCode(
-            window.localStorage.getItem(PRICING_COUNTRY_CODE_KEY),
-        );
-    } catch {
-        return null;
-    }
-}
 
 export default function PricingSection({
     hideHeader = false,
@@ -46,7 +30,7 @@ export default function PricingSection({
     className = "",
 }: PricingSectionProps) {
     const [country, setCountry] = useState<CountryState>(() => {
-        const code = readStoredCountryCode();
+        const code = readStoredPricingCountryCode();
         return { code, ready: Boolean(code) };
     });
     const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
@@ -57,36 +41,9 @@ export default function PricingSection({
         let cancelled = false;
 
         async function detectCountry() {
-            try {
-                const response = await fetch("https://ipapi.co/json/");
-                if (!response.ok) {
-                    throw new Error("Country lookup failed");
-                }
-
-                const data = (await response.json()) as {
-                    country_code?: unknown;
-                };
-                const code = normalizeCountryCode(data.country_code);
-
-                if (code) {
-                    try {
-                        window.localStorage.setItem(
-                            PRICING_COUNTRY_CODE_KEY,
-                            code,
-                        );
-                    } catch {
-                        // Ignore storage failures; the detected country can still
-                        // drive this render.
-                    }
-                }
-
-                if (!cancelled) {
-                    setCountry({ code, ready: true });
-                }
-            } catch {
-                if (!cancelled) {
-                    setCountry({ code: null, ready: true });
-                }
+            const code = await detectPricingCountryCode();
+            if (!cancelled) {
+                setCountry({ code, ready: true });
             }
         }
 

@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import {
-    getRedisConnection,
+    getRedisConnectionOptions,
     EMAIL_QUEUE_NAME,
     EmailJobData,
 } from "../queues/email.queue";
@@ -28,7 +28,7 @@ export function startEmailWorker(): Worker<EmailJobData> {
     if (_worker) return _worker;
 
     _worker = new Worker<EmailJobData>(EMAIL_QUEUE_NAME, processEmailJob, {
-        connection: getRedisConnection(),
+        connection: getRedisConnectionOptions(),
         concurrency: 5,
     });
 

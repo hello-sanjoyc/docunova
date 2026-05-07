@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import { AI_QUEUE_NAME, AiSummarizeJobData } from '../queues/ai.queue';
-import { getRedisConnection } from '../queues/email.queue';
+import { getRedisConnectionOptions } from '../queues/email.queue';
 import { runAiSummarize } from '../services/aiSummarize.service';
 import { appLogger } from '../config/logger';
 
@@ -33,7 +33,7 @@ export function startAiWorker(): Worker<AiSummarizeJobData> {
     if (_worker) return _worker;
 
     _worker = new Worker<AiSummarizeJobData>(AI_QUEUE_NAME, processAiJob, {
-        connection: getRedisConnection(),
+        connection: getRedisConnectionOptions(),
         concurrency: 3,
     });
 

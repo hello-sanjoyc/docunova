@@ -14,8 +14,8 @@ export function calculateUsage(input: UsageCalculationInput) {
     const maxPagesPerUpload = input.limits.max_pages_per_upload ?? Infinity;
     const pageLimit =
         input.planSlug === "starter"
-            ? input.limits.lifetime_pages ?? 0
-            : input.limits.pages_per_month ?? 0;
+            ? (input.limits.lifetime_pages ?? 0)
+            : (input.limits.pages_per_month ?? 0);
     const ocrIncluded = input.limits.ocr_pages_included ?? 0;
 
     if (input.pageCount > maxPagesPerUpload) {
@@ -34,7 +34,7 @@ export function calculateUsage(input: UsageCalculationInput) {
     if (input.planSlug === "starter" && input.ocrPageCount > 0) {
         return {
             allowed: false,
-            reason: "Starter supports text-based documents only. OCR requires a paid plan.",
+            reason: "Current plan supports text-based documents only. OCR requires a paid plan.",
             pageLimit,
             ocrIncluded,
             extraPages: 0,
@@ -48,7 +48,7 @@ export function calculateUsage(input: UsageCalculationInput) {
     if (input.planSlug === "starter" && projectedPages > pageLimit) {
         return {
             allowed: false,
-            reason: `Starter includes ${pageLimit} lifetime pages. Upgrade to continue.`,
+            reason: `Current plan includes ${pageLimit} lifetime pages. Upgrade to continue.`,
             pageLimit,
             ocrIncluded,
             extraPages: 0,

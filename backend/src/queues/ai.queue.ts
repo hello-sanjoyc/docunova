@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import { getRedisConnection } from './email.queue';
+import { getRedisConnectionOptions } from './email.queue';
 import { createLogger } from '../config/logger';
 
 export const AI_QUEUE_NAME = 'ai-summarize';
@@ -19,7 +19,7 @@ export function getAiQueue(): Queue<AiSummarizeJobData> {
         queueName: AI_QUEUE_NAME,
     });
     _aiQueue = new Queue<AiSummarizeJobData>(AI_QUEUE_NAME, {
-        connection: getRedisConnection(),
+        connection: getRedisConnectionOptions(),
         defaultJobOptions: {
             attempts: 2,
             backoff: { type: 'exponential', delay: 10_000 },

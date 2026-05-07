@@ -14,6 +14,7 @@ import {
     cacheKey,
 } from "./cache.service";
 import { invalidateUserCaches } from "./user.service";
+import { getCurrentSubscription } from "./subscription.service";
 
 const MEMBERS_CACHE_TTL_SECONDS = 30;
 
@@ -77,11 +78,10 @@ async function getUserOrganizationId(userUuid: string) {
 }
 
 async function resolveRoleId(
-    organizationId: bigint,
     roleCode: OrganizationRoleCode,
 ): Promise<bigint | null> {
-    const role = await prisma.role.findFirst({
-        where: { organizationId, code: roleCode },
+    const role = await prisma.role.findUnique({
+        where: { code: roleCode },
         select: { id: true },
     });
     return role?.id ?? null;
@@ -206,7 +206,6 @@ async function loadMembersPage(
         if (roleCodes.length > 0) {
             const roles = await prisma.role.findMany({
                 where: {
-                    organizationId,
                     code: { in: roleCodes },
                 },
                 select: { code: true, name: true },
@@ -268,6 +267,36 @@ export async function inviteMembers(
     });
     if (!org) {
         throw Object.assign(new Error("Organization not found"), { statusCode: 404 });
+    }
+
+    // Enforce plan-based team feature gate
+    const subscription = await getCurrentSubscription(inviterUuid);
+    if (subscription.plan.slug !== "team") {
+        throw Object.assign(
+            new Error("Team invitations require the Team plan. Please upgrade to invite members."),
+            { statusCode: 403 },
+        );
+    }
+
+    const memberLimit = subscription.plan.limits.find(
+        (l: { key: string; value: number }) => l.key === "team_members_included",
+    )?.value ?? 0;
+
+    if (memberLimit > 0) {
+        const currentMemberCount = await prisma.organizationMember.count({
+            where: {
+                organizationId,
+                status: { in: ["ACTIVE", "INVITED"] },
+            },
+        });
+        if (currentMemberCount >= memberLimit) {
+            throw Object.assign(
+                new Error(
+                    `Your plan allows a maximum of ${memberLimit} team members. Remove a member or upgrade to add more.`,
+                ),
+                { statusCode: 403 },
+            );
+        }
     }
 
     const inviter = await prisma.user.findUnique({
@@ -442,7 +471,7 @@ export async function acceptInvitation(userUuid: string, token: string) {
 
     const invitationRoleCode = normalizeOrganizationRoleCode(invitation.roleCode);
     const roleId = invitationRoleCode
-        ? await resolveRoleId(invitation.organizationId, invitationRoleCode)
+        ? await resolveRoleId(invitationRoleCode)
         : null;
 
     const now = new Date();

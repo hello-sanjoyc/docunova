@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import { getRedisConnection } from './email.queue';
+import { getRedisConnectionOptions } from './email.queue';
 import { createLogger } from '../config/logger';
 
 export const OCR_QUEUE_NAME = 'ocr-extract';
@@ -18,7 +18,7 @@ export function getOcrQueue(): Queue<OcrJobData> {
     if (_ocrQueue) return _ocrQueue;
 
     _ocrQueue = new Queue<OcrJobData>(OCR_QUEUE_NAME, {
-        connection: getRedisConnection(),
+        connection: getRedisConnectionOptions(),
         defaultJobOptions: {
             attempts: 2,
             backoff: { type: 'exponential', delay: 15_000 },

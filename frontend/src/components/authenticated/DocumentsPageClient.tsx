@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Cloud, Download, FilePlus2, FileText, Trash2 } from "lucide-react";
+import { Download, FilePlus2, FileText, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import {
     deleteDocument,
@@ -12,7 +12,6 @@ import {
     searchDocuments,
     type DocumentItem,
 } from "@/lib/api/documents";
-import { getDashboardOverview } from "@/lib/api/user";
 import { formatApiError } from "@/lib/api/errors";
 import {
     handleDownload as handleDownloadDocument,
@@ -22,18 +21,9 @@ import { DOCUMENT_STATUS_OPTIONS } from "@/components/authenticated/documentFilt
 import ConfirmActionDialog from "@/components/authenticated/ConfirmActionDialog";
 import { useApiQuery } from "@/lib/query/apiQuery";
 import { queryKeys } from "@/lib/query/queryKeys";
+import UsageCard from "./UsageCard";
 
 const PAGE_SIZE = 10;
-const DEFAULT_STORAGE_LIMIT_BYTES = 10 * 1024 * 1024 * 1024;
-const STORAGE_LIMIT_BYTES = (() => {
-    const raw =
-        process.env.NEXT_PUBLIC_DOCUMENT_STORAGE_LIMIT ||
-        process.env.DOCUMENT_STORAGE_LIMIT;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0
-        ? parsed
-        : DEFAULT_STORAGE_LIMIT_BYTES;
-})();
 
 function formatDate(value: string) {
     const date = new Date(value);
@@ -124,7 +114,9 @@ export default function DocumentsPageClient() {
                 return searchDocuments({
                     query: searchQuery,
                     queryType: "full_text",
-                    filters: statusFilter ? { status: statusFilter } : undefined,
+                    filters: statusFilter
+                        ? { status: statusFilter }
+                        : undefined,
                     page,
                     limit: PAGE_SIZE,
                 });
@@ -148,18 +140,6 @@ export default function DocumentsPageClient() {
                 sortOrder: "desc",
             }),
     });
-    const storageOverviewQuery = useApiQuery({
-        queryKey: queryKeys.user.dashboardOverview(),
-        queryFn: getDashboardOverview,
-        select: (overview) => {
-            const used = bytesToNumber(overview.storage.usedBytes);
-            const total =
-                bytesToNumber(overview.storage.totalBytes) ||
-                STORAGE_LIMIT_BYTES;
-            return { used, total };
-        },
-    });
-
     useEffect(() => {
         setPage(1);
     }, [searchQuery, statusFilter]);
@@ -179,10 +159,6 @@ export default function DocumentsPageClient() {
     const totalUploaded = totalUploadedQuery.data?.total ?? 0;
     const totalUploadedLoading =
         totalUploadedQuery.isPending || totalUploadedQuery.isFetching;
-    const storageLoading =
-        storageOverviewQuery.isPending || storageOverviewQuery.isFetching;
-    const storageUsedBytes = storageOverviewQuery.data?.used ?? 0;
-    const storageTotalBytes = storageOverviewQuery.data?.total ?? STORAGE_LIMIT_BYTES;
 
     const summaryText = useMemo(() => {
         if (total === 0) return "Showing 0 records";
@@ -190,11 +166,6 @@ export default function DocumentsPageClient() {
         const end = Math.min(page * PAGE_SIZE, total);
         return `Showing ${start}-${end} of ${total} records`;
     }, [page, total]);
-
-    const usagePercent = Math.min(
-        100,
-        Math.round((storageUsedBytes / storageTotalBytes) * 100),
-    );
 
     async function handleDeleteConfirm() {
         if (!deleteTargetId) return;
@@ -282,50 +253,9 @@ export default function DocumentsPageClient() {
                 </header>
 
                 <section className="mb-8 grid grid-cols-1 gap-5 lg:grid-cols-3">
-                    <article className="min-h-[160px] rounded-[24px] border border-[#e1dbd1] bg-[#f8f5ef] p-5">
-                        {storageLoading ? (
-                            <div className="animate-pulse">
-                                <div className="h-8 w-44 rounded bg-[#e8e2d8]" />
-                                <div className="h-5 w-full rounded-full bg-[#ece8e2]" />
-                                <div className="mt-3 flex items-center justify-between">
-                                    <div className="h-4 w-24 rounded bg-[#eee8de]" />
-                                    <div className="h-4 w-20 rounded bg-[#eee8de]" />
-                                </div>
-                            </div>
-                        ) : (
-                            <>
-                                <h3 className="flex items-center gap-3 text-2xl leading-tight font-serif text-[#37322d]">
-                                    <Cloud
-                                        size={32}
-                                        strokeWidth={1.8}
-                                        className="text-[#bb7721]"
-                                        aria-hidden="true"
-                                    />
-                                    <span>Storage Usage</span>
-                                </h3>
-                                <div className="mt-8 h-5 w-full overflow-hidden rounded-full bg-[#ece8e2]">
-                                    <div
-                                        className="h-full rounded-full bg-[#b87013]"
-                                        style={{ width: `${usagePercent}%` }}
-                                    />
-                                </div>
-                                <div className="mt-2 flex items-center justify-between text-sm leading-none text-[#8f867c]">
-                                    <span>
-                                        {formatSizeFromBytes(storageUsedBytes)}{" "}
-                                        Used
-                                    </span>
-                                    <span>
-                                        {formatSizeFromBytes(
-                                            storageTotalBytes,
-                                        )}{" "}
-                                        Total
-                                    </span>
-                                </div>
-                            </>
-                        )}
-                    </article>
+                    <UsageCard />
 
-                    <article className="min-h-[160px] rounded-[24px] border border-[#e1dbd1] bg-[#f8f5ef] p-5">
+                    <article className="min-h-[160px] rounded-xl border border-[#e1dbd1] bg-[#f8f5ef] p-5">
                         {totalUploadedLoading ? (
                             <div className="animate-pulse">
                                 <div className="h-8 w-48 rounded bg-[#e8e2d8]" />
@@ -333,22 +263,22 @@ export default function DocumentsPageClient() {
                             </div>
                         ) : (
                             <>
-                                <h3 className="flex items-center gap-4 text-2xl leading-tight font-serif text-[#37322d]">
+                                <div className="flex items-center gap-4">
                                     <FileText
-                                        size={32}
+                                        size={24}
                                         strokeWidth={1.8}
                                         aria-hidden="true"
                                     />
-                                    <span>Documents Uploaded</span>
-                                </h3>
-                                <p className="mt-9 pl-12 text-[40px] font-bold leading-none tracking-tight text-[#b36d13]">
+                                    <h2 className="text-xl leading-tight font-serif text-[#37322d]">
+                                        Documents Uploaded
+                                    </h2>
+                                </div>
+                                <p className="mt-9 pl-[38px] text-[40px] font-bold leading-none tracking-tight text-[#b36d13]">
                                     {totalUploaded}
                                 </p>
                             </>
                         )}
                     </article>
-
-                    <article className="min-h-[160px] rounded-[24px] border border-[#e1dbd1] p-5"></article>
                 </section>
 
                 <div className="overflow-hidden rounded-2xl border border-[#e4ddd3] bg-[#f9f7f3]">

@@ -62,10 +62,16 @@ export default function Navbar() {
                 {/* Auth actions */}
                 <div className="flex items-center gap-3">
                     <a
-                        href="/login"
+                        href="/signup"
                         className="text-sm bg-ink text-cream px-4 py-2 rounded-full hover:bg-amber transition-colors font-medium"
                     >
                         Start free
+                    </a>
+                    <a
+                        href="/login"
+                        className="text-sm bg-transparent border border-amber text-ink px-4 py-2 rounded-full hover:bg-amber transition-colors font-medium"
+                    >
+                        Sign-in
                     </a>
                 </div>
             </div>

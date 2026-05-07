@@ -64,7 +64,7 @@ export async function upload(request: FastifyRequest, reply: FastifyReply) {
         reply.status(403).send({
             statusCode: 403,
             success: false,
-            message: "Starter supports PDF uploads only.",
+            message: "Current plan supports PDF uploads only.",
             data: usageCheck,
         });
         return;
@@ -73,7 +73,7 @@ export async function upload(request: FastifyRequest, reply: FastifyReply) {
         reply.status(403).send({
             statusCode: 403,
             success: false,
-            message: "This plan supports PDF and DOCX uploads only.",
+            message: "Current plan supports PDF and DOCX uploads only.",
             data: usageCheck,
         });
         return;

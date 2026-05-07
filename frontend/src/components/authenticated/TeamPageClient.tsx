@@ -8,6 +8,7 @@ import {
     Trash2,
     User,
     UserPlus,
+    Users,
     X,
     ChevronDown,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import {
 import { formatApiError } from "@/lib/api/errors";
 import { useApiQuery } from "@/lib/query/apiQuery";
 import { queryKeys } from "@/lib/query/queryKeys";
+import { useSubscription } from "@/lib/hooks/useSubscription";
 
 const TEAM_ROLES: {
     code: OrganizationRoleCode;
@@ -70,6 +72,7 @@ function isPrivilegedRole(code: string | null | undefined) {
 
 export default function TeamPageClient() {
     const queryClient = useQueryClient();
+    const { planSlug, getLimit, isLoading: subLoading } = useSubscription();
     const membersQuery = useApiQuery({
         queryKey: queryKeys.team.members(),
         queryFn: () => listMembers({ status: "all", limit: 100 }),
@@ -97,8 +100,13 @@ export default function TeamPageClient() {
     const canSend = parsedEmails.length > 0 && !hasInvalidEmail && !sending;
 
     const members = membersQuery.data?.data ?? [];
-    const loading = membersQuery.isPending || membersQuery.isFetching;
+    const loading = membersQuery.isPending || membersQuery.isFetching || subLoading;
     const loadError = membersQuery.isError ? formatApiError(membersQuery.error) : "";
+
+    const isTeamPlan = planSlug === "team";
+    const memberLimit = getLimit("team_members_included");
+    const activeCount = members.filter((m) => m.status === "ACTIVE").length;
+    const atMemberLimit = memberLimit > 0 && activeCount >= memberLimit;
 
     function resetInviteForm() {
         setSelectedRole("admin");
@@ -154,6 +162,37 @@ export default function TeamPageClient() {
     const invitedMembers = members.filter(
         (member) => member.status === "INVITED",
     );
+
+    if (!subLoading && !isTeamPlan) {
+        return (
+            <section className="max-w-[1180px]">
+                <header className="mb-10">
+                    <h1 className="font-serif text-[32px] font-semibold leading-[0.95] tracking-tight text-[#2f2a25]">
+                        Team
+                    </h1>
+                    <p className="mt-3 text-sm text-[#4f463e] md:text-base">
+                        Manage your workspace members and access.
+                    </p>
+                </header>
+                <div className="flex flex-col items-center justify-center rounded-[28px] border border-[#e4ddd3] bg-[#f9f7f3] px-8 py-16 text-center">
+                    <Users size={40} strokeWidth={1.5} className="mb-4 text-[#c8a45a]" />
+                    <h2 className="mb-2 font-serif text-2xl font-semibold text-[#2f2a25]">
+                        Team collaboration requires the Team plan
+                    </h2>
+                    <p className="mb-6 max-w-md text-sm text-[#6a6259]">
+                        Upgrade to Team to invite members, share a vault, and
+                        manage access roles together.
+                    </p>
+                    <a
+                        href="/billing"
+                        className="inline-block rounded-full bg-[#C8852A] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#8A5A15] transition-colors"
+                    >
+                        Upgrade to Team →
+                    </a>
+                </div>
+            </section>
+        );
+    }
 
     return (
         <>
@@ -280,10 +319,17 @@ export default function TeamPageClient() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 lg:pt-2">
+                        {memberLimit > 0 && (
+                            <span className="text-sm text-[#6a6259]">
+                                {activeCount} / {memberLimit} seats used
+                            </span>
+                        )}
                         <button
                             type="button"
                             onClick={() => setIsInviteOpen(true)}
-                            className="flex h-12 items-center gap-2.5 rounded-md border border-[#d4b37a] bg-[#e5c186] px-5 text-[14px] font-medium text-[#3d3327]"
+                            disabled={atMemberLimit}
+                            title={atMemberLimit ? `Member limit reached (${memberLimit} seats on your plan)` : undefined}
+                            className="flex h-12 items-center gap-2.5 rounded-md border border-[#d4b37a] bg-[#e5c186] px-5 text-[14px] font-medium text-[#3d3327] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             <UserPlus
                                 size={16}

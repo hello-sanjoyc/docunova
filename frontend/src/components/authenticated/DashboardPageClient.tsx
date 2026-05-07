@@ -15,7 +15,7 @@ import { getDashboardOverview } from "@/lib/api/user";
 import { formatApiError } from "@/lib/api/errors";
 import { useApiQuery } from "@/lib/query/apiQuery";
 import { queryKeys } from "@/lib/query/queryKeys";
-import UsageCard from "./UsageCard";
+import UsageCard, { useUsageSummary } from "./UsageCard";
 
 function DashboardSkeleton() {
     return (
@@ -129,12 +129,6 @@ function formatMoney(amount: number, currency: string | null) {
     });
 }
 
-function severityClass(severity: "high" | "medium" | "low" | null) {
-    if (severity === "high") return "bg-[#f4d6d0] text-[#9b2f2f]";
-    if (severity === "medium") return "bg-[#f4e2bf] text-[#80520f]";
-    return "bg-[#dce9e2] text-[#2b5c49]";
-}
-
 type TrendMode = "last7Days" | "last30Days" | "last12Months";
 
 const MONTH_SHORT_NAMES = [
@@ -173,6 +167,7 @@ export default function DashboardPageClient() {
         queryKey: queryKeys.user.dashboardOverview(),
         queryFn: getDashboardOverview,
     });
+    const usageQuery = useUsageSummary();
     const data = dashboardOverviewQuery.data;
 
     const trendData = useMemo(() => {
@@ -292,25 +287,6 @@ export default function DashboardPageClient() {
                 <article className="min-h-[160px] rounded-xl  border border-[#e1dbd1] bg-[#f8f5ef] p-5">
                     <div className="flex items-center gap-4">
                         <span className="text-[#37322d]">
-                            <FileText
-                                size={24}
-                                strokeWidth={1.8}
-                                aria-hidden="true"
-                            />
-                        </span>
-                        <h2 className="text-xl leading-tight font-serif text-[#37322d]">
-                            Documents Uploaded
-                        </h2>
-                    </div>
-
-                    <p className="mt-9 pl-[38px] text-[40px] font-bold leading-none tracking-tight text-[#b36d13]">
-                        {data.documentCounts.total}
-                    </p>
-                </article>
-
-                <article className="min-h-[160px] rounded-xl  border border-[#e1dbd1] bg-[#f8f5ef] p-5">
-                    <div className="flex items-center gap-4">
-                        <span className="text-[#37322d]">
                             <Users
                                 size={24}
                                 strokeWidth={1.8}
@@ -345,7 +321,7 @@ export default function DashboardPageClient() {
 
                     {topRisks.length > 0 ? (
                         <ol className="mt-4 space-y-1">
-                            {topRisks.map((risk, index) => (
+                            {topRisks.map((risk) => (
                                 <li key={risk.id} className="pl-[38px]">
                                     <div className="flex items-start gap-2">
                                         <div className="min-w-0 flex-1">
@@ -427,6 +403,14 @@ export default function DashboardPageClient() {
                     <p className="mt-9 pl-[38px] text-[40px] font-bold leading-none tracking-tight text-[#2f6f50]">
                         {spendLabel}
                     </p>
+                    {usageQuery.data && (
+                        <p className="mt-4 pl-[38px] text-sm text-[#6f675e]">
+                            <span>Extra estimate: </span>
+                            <span className="font-semibold text-[#2f2b27]">
+                                {usageQuery.data.extraUsageEstimate.formatted}
+                            </span>
+                        </p>
+                    )}
                 </article>
             </div>
 

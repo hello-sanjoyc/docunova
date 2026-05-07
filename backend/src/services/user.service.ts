@@ -205,13 +205,9 @@ export async function updateUser(uuid: string, data: UpdateProfileBody) {
 
             const role = await tx.role.upsert({
                 where: {
-                    organizationId_code: {
-                        organizationId: currentUser.organizationId,
-                        code: normalizedRoleCode,
-                    },
+                    code: normalizedRoleCode,
                 },
                 create: {
-                    organizationId: currentUser.organizationId,
                     code: normalizedRoleCode,
                     name: toRoleName(toAppRole(normalizedRoleCode)),
                     isSystem: true,

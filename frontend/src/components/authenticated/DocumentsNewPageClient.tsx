@@ -30,6 +30,7 @@ import {
     uploadDocument,
     type DocumentItem,
 } from "@/lib/api/documents";
+import { useSubscription } from "@/lib/hooks/useSubscription";
 import { formatApiError } from "@/lib/api/errors";
 import {
     handleDownload as handleDownloadDocument,
@@ -61,6 +62,8 @@ function summaryCardStatus(
 }
 
 export default function DocumentsNewPageClient() {
+    const { hasFeature } = useSubscription();
+    const canShare = hasFeature("shareable_links");
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
     const [latestDocument, setLatestDocument] = useState<DocumentItem | null>(
@@ -746,11 +749,19 @@ export default function DocumentsNewPageClient() {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={handleOpenShareModal}
+                                        onClick={canShare ? handleOpenShareModal : () => {
+                                            toast.info("Shareable links require Professional or Team plan. Upgrade to unlock.");
+                                        }}
+                                        title={canShare ? undefined : "Upgrade to Professional or Team to share links"}
                                         className="inline-flex h-14 items-center gap-2 rounded-2xl px-2 text-[14px] leading-none text-[#8f857a] disabled:opacity-100"
                                     >
                                         <Share2 size={20} strokeWidth={2} />
                                         Share link
+                                        {!canShare && (
+                                            <span className="ml-1 rounded-full bg-[#f5e6cc] px-1.5 py-0.5 text-[10px] font-semibold text-[#8a5a15]">
+                                                PRO
+                                            </span>
+                                        )}
                                     </button>
                                     <button
                                         type="button"

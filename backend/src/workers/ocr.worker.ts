@@ -5,7 +5,7 @@ import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { OCR_QUEUE_NAME, OcrJobData } from '../queues/ocr.queue';
-import { getRedisConnection } from '../queues/email.queue';
+import { getRedisConnectionOptions } from '../queues/email.queue';
 import { downloadFromStorage } from '../services/storage.service';
 import { runPythonOcr } from '../services/ocr.service';
 import { enqueueAiSummarize } from '../queues/ai.queue';
@@ -123,7 +123,7 @@ export function startOcrWorker(): Worker<OcrJobData> {
     if (_worker) return _worker;
 
     _worker = new Worker<OcrJobData>(OCR_QUEUE_NAME, processOcrJob, {
-        connection: getRedisConnection(),
+        connection: getRedisConnectionOptions(),
         concurrency: 2,
     });
 

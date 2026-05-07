@@ -194,6 +194,12 @@ function toRoleName(roleCode: OrganizationRoleCode) {
     return roleCode.charAt(0).toUpperCase() + roleCode.slice(1);
 }
 
+function normalizeCountryCode(countryCode: string | null | undefined) {
+    if (!countryCode) return null;
+    const normalized = countryCode.trim().toUpperCase();
+    return /^[A-Z]{2}$/.test(normalized) ? normalized : null;
+}
+
 async function getPendingInvitationForEmail(email: string) {
     return prisma.organizationInvitation.findFirst({
         where: {
@@ -212,18 +218,13 @@ async function getPendingInvitationForEmail(email: string) {
 
 async function ensureRoleId(
     tx: Prisma.TransactionClient,
-    organizationId: bigint,
     roleCode: OrganizationRoleCode,
 ) {
     const role = await tx.role.upsert({
         where: {
-            organizationId_code: {
-                organizationId,
-                code: roleCode,
-            },
+            code: roleCode,
         },
         create: {
-            organizationId,
             code: roleCode,
             name: toRoleName(roleCode),
             isSystem: true,
@@ -412,7 +413,7 @@ export async function registerUser(
     const hashed = await hashPassword(input.password);
     const joinedAt = new Date();
     const user = await prisma.$transaction(async (tx) => {
-        const roleId = await ensureRoleId(tx, organizationId, roleCode);
+        const roleId = await ensureRoleId(tx, roleCode);
         const createdUser = await tx.user.create({
             data: {
                 organizationId,
@@ -420,6 +421,7 @@ export async function registerUser(
                 passwordHash: hashed,
                 fullName: input.name,
                 phone: input.phone?.trim() || null,
+                countryCode: normalizeCountryCode(input.country_code),
                 authProvider: "LOCAL",
                 status: "ACTIVE",
             },
@@ -974,7 +976,7 @@ async function fetchGoogleUserProfile(accessToken: string) {
 export async function authenticateGoogleUser(
     code: string,
     metadata?: SessionMetadata,
-    options?: { source?: "login" | "signup" },
+    options?: { source?: "login" | "signup"; countryCode?: string | null },
 ) {
     const tokenPayload = await fetchGoogleAccessToken(code);
     const profile = await fetchGoogleUserProfile(tokenPayload.access_token);
@@ -1027,7 +1029,7 @@ export async function authenticateGoogleUser(
         isNewUser = true;
         const joinedAt = new Date();
         user = await prisma.$transaction(async (tx) => {
-            const roleId = await ensureRoleId(tx, organizationId, roleCode);
+            const roleId = await ensureRoleId(tx, roleCode);
             const createdUser = await tx.user.create({
                 data: {
                     organizationId,
@@ -1038,7 +1040,8 @@ export async function authenticateGoogleUser(
                     firstName: profile.given_name,
                     lastName: profile.family_name,
                     avatarUrl: profile.picture,
-                    emailVerifiedAt: profile.email_verified ? new Date() : null,
+                    countryCode: normalizeCountryCode(options?.countryCode),
+                    emailVerifiedAt: new Date(),
                     status: "ACTIVE",
                 },
                 select: {
@@ -1077,6 +1080,7 @@ export async function authenticateGoogleUser(
             });
         }
 
+        const shouldMarkEmailVerified = !user.emailVerifiedAt;
         user = await prisma.user.update({
             where: { id: user.id },
             data: {
@@ -1086,7 +1090,7 @@ export async function authenticateGoogleUser(
                 firstName: profile.given_name,
                 lastName: profile.family_name,
                 avatarUrl: profile.picture,
-                ...(profile.email_verified && !user.emailVerifiedAt
+                ...(shouldMarkEmailVerified
                     ? { emailVerifiedAt: new Date() }
                     : {}),
             },
@@ -1107,6 +1111,10 @@ export async function authenticateGoogleUser(
                 },
             },
         });
+
+        if (shouldMarkEmailVerified) {
+            await invalidateUserCaches(user.uuid);
+        }
     }
 
     if (options?.source === "signup" && isNewUser && user.emailVerifiedAt) {

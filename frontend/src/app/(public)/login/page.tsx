@@ -18,13 +18,14 @@
  *   POST /api/auth/login call, then redirect to /dashboard on success.
  */
 
-import { useState, type FocusEvent, Suspense } from "react";
+import { useEffect, useState, type FocusEvent, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import { getGoogleOAuthUrl, login, twoFactorLogin } from "@/lib/api/auth";
 import { formatApiError } from "@/lib/api/errors";
+import { getPricingCountryCode } from "@/lib/api/pricingCountry";
 import { setAuthSession } from "@/lib/api/session";
 
 function safeNextPath(next: string | null): string {
@@ -232,6 +233,10 @@ function LoginPageInner() {
     // 2FA step state — set when the server returns twoFactorRequired: true
     const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
 
+    useEffect(() => {
+        void getPricingCountryCode();
+    }, []);
+
     function handleChange(name: FieldName, value: string) {
         setFields((prev) => ({ ...prev, [name]: value }));
         if (touched[name]) {
@@ -262,7 +267,11 @@ function LoginPageInner() {
         setServerError("");
 
         try {
-            const result = await login(fields);
+            const countryCode = await getPricingCountryCode();
+            const result = await login({
+                ...fields,
+                ...(countryCode ? { country_code: countryCode } : {}),
+            });
 
             // Server requires 2FA — show the code-entry step.
             if ("twoFactorRequired" in result && result.twoFactorRequired) {
@@ -290,6 +299,15 @@ function LoginPageInner() {
             toast.error(message);
             setSubmitState("error");
         }
+    }
+
+    async function handleGoogleOAuth() {
+        const countryCode = await getPricingCountryCode();
+        window.location.href = getGoogleOAuthUrl(
+            "login",
+            nextPath,
+            countryCode,
+        );
     }
 
     function handle2FASuccess(auth: import("@/lib/api/auth").AuthResult) {
@@ -355,12 +373,7 @@ function LoginPageInner() {
                 {/* Google OAuth */}
                 <button
                     type="button"
-                    onClick={() => {
-                        window.location.href = getGoogleOAuthUrl(
-                            "login",
-                            nextPath,
-                        );
-                    }}
+                    onClick={handleGoogleOAuth}
                     className="w-full flex items-center justify-center gap-3 border border-border rounded-full py-2.5 text-[14px] font-medium text-ink hover:border-amber hover:bg-amber-light/40 transition-colors mb-5"
                 >
                     <svg

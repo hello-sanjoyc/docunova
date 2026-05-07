@@ -22,13 +22,14 @@
  *   POST /api/auth/signup call, then redirect to /dashboard on success.
  */
 
-import { Suspense, useState, type FormEvent, type FocusEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent, type FocusEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import { getGoogleOAuthUrl, register } from "@/lib/api/auth";
 import { formatApiError } from "@/lib/api/errors";
+import { getPricingCountryCode } from "@/lib/api/pricingCountry";
 import { setAuthSession } from "@/lib/api/session";
 
 function safeNextPath(next: string | null): string {
@@ -142,6 +143,10 @@ function SignupPageInner() {
     const [submitState, setSubmitState] = useState<SubmitState>("idle");
     const [serverError, setServerError] = useState("");
 
+    useEffect(() => {
+        void getPricingCountryCode();
+    }, []);
+
     // Update field value and re-validate if already touched.
     function handleChange(name: FieldName, value: string) {
         const updated = { ...fields, [name]: value };
@@ -193,12 +198,14 @@ function SignupPageInner() {
         setServerError("");
 
         try {
+            const countryCode = await getPricingCountryCode();
             const auth = await register({
                 name: fields.fullName,
                 organizationName: fields.companyName || undefined,
                 phone: fields.phone || undefined,
                 email: fields.email,
                 password: fields.password,
+                ...(countryCode ? { country_code: countryCode } : {}),
             });
             if (auth.user.emailVerifiedAt) {
                 setAuthSession(auth.accessToken, auth.refreshToken);
@@ -218,6 +225,15 @@ function SignupPageInner() {
             toast.error(message);
             setSubmitState("error");
         }
+    }
+
+    async function handleGoogleOAuth() {
+        const countryCode = await getPricingCountryCode();
+        window.location.href = getGoogleOAuthUrl(
+            "signup",
+            nextPath,
+            countryCode,
+        );
     }
 
     const isSubmitting = submitState === "submitting";
@@ -263,12 +279,7 @@ function SignupPageInner() {
                 {/* ── Google OAuth ──────────────────────────────────────────── */}
                 <button
                     type="button"
-                    onClick={() => {
-                        window.location.href = getGoogleOAuthUrl(
-                            "signup",
-                            nextPath,
-                        );
-                    }}
+                    onClick={handleGoogleOAuth}
                     className="w-full flex items-center justify-center gap-3 border border-border rounded-full py-2.5 text-[14px] font-medium text-ink hover:border-amber hover:bg-amber-light/40 transition-colors mb-5"
                 >
                     <svg

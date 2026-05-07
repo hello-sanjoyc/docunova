@@ -1,4 +1,4 @@
-import { Queue } from "bullmq";
+import { Queue, type ConnectionOptions } from "bullmq";
 import IORedis from "ioredis";
 import env from "../config/env";
 import { createLogger } from "../config/logger";
@@ -41,6 +41,22 @@ function logRedisError(err: Error & { code?: string }) {
         code: err.code,
         message: err.message,
     });
+}
+
+// Plain options object — pass to BullMQ so it creates its own connections internally.
+// Each Queue and Worker must have its own connection; sharing a single IORedis instance
+// causes BullMQ workers to stall because blocking commands monopolise the socket.
+export function getRedisConnectionOptions(): ConnectionOptions {
+    return {
+        host: env.REDIS_HOST,
+        port: env.REDIS_PORT,
+        ...(env.REDIS_USERNAME ? { username: env.REDIS_USERNAME } : {}),
+        ...(env.REDIS_PASSWORD ? { password: env.REDIS_PASSWORD } : {}),
+        db: env.REDIS_DB,
+        ...(env.REDIS_TLS ? { tls: {} } : {}),
+        connectTimeout: env.REDIS_CONNECT_TIMEOUT_MS,
+        maxRetriesPerRequest: null, // required by BullMQ
+    };
 }
 
 export function getRedisConnection(): IORedis {
@@ -93,7 +109,7 @@ export function getEmailQueue(): Queue<EmailJobData> {
     if (_emailQueue) return _emailQueue;
 
     _emailQueue = new Queue<EmailJobData>(EMAIL_QUEUE_NAME, {
-        connection: getRedisConnection(),
+        connection: getRedisConnectionOptions(),
         defaultJobOptions: {
             attempts: 3,
             backoff: { type: "exponential", delay: 5_000 },

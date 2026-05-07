@@ -8,6 +8,7 @@ import {
     Download,
     FilePlus2,
     FileText,
+    History,
     Search,
     Trash2,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
 import ConfirmActionDialog from "@/components/authenticated/ConfirmActionDialog";
 import { useApiQuery } from "@/lib/query/apiQuery";
 import { queryKeys } from "@/lib/query/queryKeys";
+import { useSubscription } from "@/lib/hooks/useSubscription";
 
 function formatDateTime(value: string) {
     const date = new Date(value);
@@ -56,6 +58,7 @@ function statusClass(status: string) {
 }
 
 export default function RecentActivitiesPageClient() {
+    const { planSlug, isLoading: subLoading } = useSubscription();
     const queryClient = useQueryClient();
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -133,6 +136,38 @@ export default function RecentActivitiesPageClient() {
 
     function handleDownloadSummaryPdf(document: DocumentItem) {
         handleDownloadSummaryDocumentPdf({ document });
+    }
+
+    if (!subLoading && planSlug !== "team") {
+        return (
+            <section className="max-w-[1180px]">
+                <header className="mb-10">
+                    <h1 className="font-serif text-[32px] font-semibold leading-[0.95] tracking-tight text-[#2f2a25]">
+                        Recent Activities
+                    </h1>
+                    <p className="mt-3 text-sm text-[#4f463e] md:text-base">
+                        Track document activity across your workspace.
+                    </p>
+                </header>
+                <div className="flex flex-col items-center justify-center rounded-[28px] border border-[#e4ddd3] bg-[#f9f7f3] px-8 py-16 text-center">
+                    <History size={40} strokeWidth={1.5} className="mb-4 text-[#c8a45a]" />
+                    <h2 className="mb-2 font-serif text-2xl font-semibold text-[#2f2a25]">
+                        Activity log is a Team plan feature
+                    </h2>
+                    <p className="mb-6 max-w-md text-sm text-[#6a6259]">
+                        Upgrade to Team to see a full activity log across your
+                        shared workspace, including uploads, searches, and
+                        deletions.
+                    </p>
+                    <a
+                        href="/billing"
+                        className="inline-block rounded-full bg-[#C8852A] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#8A5A15] transition-colors"
+                    >
+                        Upgrade to Team →
+                    </a>
+                </div>
+            </section>
+        );
     }
 
     return (

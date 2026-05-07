@@ -8,11 +8,13 @@ export interface RegisterBody {
     phone?: string;
     email: string;
     password: string;
+    country_code?: string;
 }
 
 export interface LoginBody {
     email: string;
     password: string;
+    country_code?: string;
 }
 
 export interface LogoutBody {
@@ -64,6 +66,7 @@ export const registerSchema: FastifySchema = {
             phone: { type: "string", minLength: 7, maxLength: 30 },
             email: { type: "string", format: "email" },
             password: { type: "string", minLength: 8 },
+            country_code: { type: "string", minLength: 2, maxLength: 2, pattern: "^[A-Za-z]{2}$" },
         },
     },
 };
@@ -75,6 +78,7 @@ export const loginSchema: FastifySchema = {
         properties: {
             email: { type: "string", format: "email" },
             password: { type: "string" },
+            country_code: { type: "string", minLength: 2, maxLength: 2, pattern: "^[A-Za-z]{2}$" },
         },
     },
 };
