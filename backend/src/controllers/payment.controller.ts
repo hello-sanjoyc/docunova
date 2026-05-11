@@ -1,6 +1,8 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { createPaymentOrder, handleRazorpayWebhook, verifyAndActivatePayment } from "../services/razorpay.service";
+import { getPaymentHistory, getPaymentMethodOptions } from "../services/payment.service";
 import { successResponse } from "../utils/response";
+import { PaymentHistoryQuery } from "../services/payment.service";
 
 export async function postCreateOrder(
     request: FastifyRequest<{ Body: { plan_slug: string; billing_cycle: "monthly" | "yearly" } }>,
@@ -32,4 +34,20 @@ export async function postRazorpayWebhook(
     const rawBody = (request as any).rawBody ?? JSON.stringify(request.body);
     const result = await handleRazorpayWebhook(rawBody, signature);
     reply.send(result);
+}
+
+export async function getPayments(
+    request: FastifyRequest<{ Querystring: PaymentHistoryQuery }>,
+    reply: FastifyReply,
+) {
+    const result = await getPaymentHistory(request.user.userId, request.query);
+    reply.send(successResponse("Payment history fetched", result));
+}
+
+export async function getPaymentMethods(
+    request: FastifyRequest,
+    reply: FastifyReply,
+) {
+    const methods = await getPaymentMethodOptions(request.user.userId);
+    reply.send(successResponse("Payment methods fetched", methods));
 }

@@ -2,15 +2,15 @@ import type { Metadata } from "next";
 import { createNoIndexMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = createNoIndexMetadata({
-  title: "Sign up",
-  description: "Create your DocuNova AI account.",
-  path: "/signup",
+    title: "Sign up",
+    description: "Create your DocuNova AI account.",
+    path: "/signup",
 });
 
 export default function SignupLayout({
-  children,
+    children,
 }: {
-  children: React.ReactNode;
+    children: React.ReactNode;
 }) {
-  return children;
+    return children;
 }

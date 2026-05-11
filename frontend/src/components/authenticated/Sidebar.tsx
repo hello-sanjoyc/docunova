@@ -1,5 +1,6 @@
 "use client";
 
+import type { SVGProps } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -17,6 +18,7 @@ import {
     Users,
     UserRound,
     X,
+    ChartNoAxesGantt,
 } from "lucide-react";
 import { logout } from "@/lib/api/auth";
 import { clearAuthSession, getRefreshToken } from "@/lib/api/session";
@@ -35,7 +37,9 @@ const navItems = [
     {
         href: "/recent-activities",
         label: "Recent Activities",
-        icon: <History size={16} strokeWidth={1.8} aria-hidden="true" />,
+        icon: (
+            <ChartNoAxesGantt size={16} strokeWidth={1.8} aria-hidden="true" />
+        ),
     },
     /*     {
         href: "/archives",
@@ -51,6 +55,11 @@ const navItems = [
         href: "/billing",
         label: "Subscription",
         icon: <CreditCard size={16} strokeWidth={1.8} aria-hidden="true" />,
+    },
+    {
+        href: "/billing/payments",
+        label: "Payment History",
+        icon: <History size={16} strokeWidth={1.8} aria-hidden="true" />,
     },
     {
         href: "/trash",
@@ -72,6 +81,14 @@ interface SidebarProps {
 export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
     const pathname = usePathname();
     const router = useRouter();
+    const activeHref =
+        navItems
+            .filter(
+                (item) =>
+                    pathname === item.href ||
+                    pathname?.startsWith(`${item.href}/`),
+            )
+            .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
 
     async function handleLogout() {
         try {
@@ -161,7 +178,7 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
 
             <nav className="mt-2 px-2 py-5 space-y-1 flex-1 overflow-y-auto">
                 {navItems.map((item) => {
-                    const isActive = pathname?.startsWith(item.href) ?? false;
+                    const isActive = activeHref === item.href;
                     return (
                         <Link
                             key={item.label}

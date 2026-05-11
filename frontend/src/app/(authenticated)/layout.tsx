@@ -1,17 +1,17 @@
-import type { Metadata } from 'next';
-import AuthenticatedShell from '@/components/authenticated/AuthenticatedShell';
+import type { Metadata } from "next";
+import AuthenticatedShell from "@/components/authenticated/AuthenticatedShell";
 
 export const metadata: Metadata = {
-  robots: {
-    index: false,
-    follow: false,
-  },
+    robots: {
+        index: false,
+        follow: false,
+    },
 };
 
 export default function AuthenticatedLayout({
-  children,
+    children,
 }: {
-  children: React.ReactNode;
+    children: React.ReactNode;
 }) {
-  return <AuthenticatedShell>{children}</AuthenticatedShell>;
+    return <AuthenticatedShell>{children}</AuthenticatedShell>;
 }

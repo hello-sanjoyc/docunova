@@ -38,4 +38,8 @@ export const queryKeys = {
     organizations: {
         invitation: (token: string) => ["organizations", "invitation", token] as const,
     },
+    payments: {
+        history: (params: Record<string, unknown>) => ["payments", "history", params] as const,
+        methods: () => ["payments", "methods"] as const,
+    },
 } as const;

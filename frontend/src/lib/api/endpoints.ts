@@ -55,6 +55,8 @@ export const API_ENDPOINTS = {
     PAYMENTS: {
         CREATE_ORDER: "/api/payments/create-order",
         VERIFY: "/api/payments/verify",
+        HISTORY: "/api/payments/history",
+        METHODS: "/api/payments/methods",
     },
     ORGANIZATIONS: {
         MEMBERS:    "/organizations/me/members",

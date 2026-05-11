@@ -35,3 +35,17 @@ export const verifyPaymentSchema: FastifySchema = {
         additionalProperties: false,
     },
 };
+
+export const paymentHistorySchema: FastifySchema = {
+    querystring: {
+        type: "object",
+        properties: {
+            page: { type: "integer", minimum: 1, default: 1 },
+            limit: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+            method: { type: "string", minLength: 1 },
+            date_from: { type: "string", minLength: 1 },
+            date_to: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+    },
+};

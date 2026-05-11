@@ -30,6 +30,74 @@ function formatDate(value: string | null) {
     });
 }
 
+function CurrentSubscriptionSkeleton() {
+    return (
+        <div className="flex animate-pulse flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-3">
+                <div className="h-3 w-28 rounded bg-[#ddd6cb]" />
+                <div className="h-9 w-44 rounded bg-[#e8e2d8]" />
+                <div className="h-4 w-80 max-w-full rounded bg-[#eee8de]" />
+            </div>
+            <div className="h-11 w-40 rounded-md border border-[#ead7d3] bg-[#fff8f6]" />
+        </div>
+    );
+}
+
+function PlanCardSkeleton({ index }: { index: number }) {
+    return (
+        <article
+            className={`relative flex min-h-[560px] animate-pulse flex-col rounded-2xl border bg-cream p-6 ${
+                index === 1 ? "border-amber shadow-sm" : "border-border"
+            }`}
+        >
+            {index === 1 && (
+                <div className="absolute -top-3 left-1/2 h-6 w-24 -translate-x-1/2 rounded-full bg-[#ddb36d]" />
+            )}
+
+            <div className="h-3 w-24 rounded bg-[#ddd6cb]" />
+            <div className="mt-5 h-10 w-36 rounded bg-[#e8e2d8]" />
+            <div className="mt-4 space-y-2">
+                <div className="h-4 w-full rounded bg-[#eee8de]" />
+                <div className="h-4 w-4/5 rounded bg-[#eee8de]" />
+            </div>
+
+            <div className="mt-6 space-y-3 rounded-md border border-border bg-parchment p-4">
+                <div className="h-4 w-40 rounded bg-[#e5ddd1]" />
+                <div className="h-4 w-52 rounded bg-[#eee8de]" />
+                <div className="h-4 w-44 rounded bg-[#eee8de]" />
+                <div className="h-4 w-48 rounded bg-[#eee8de]" />
+            </div>
+
+            <div className="my-6 flex-1 space-y-4">
+                {Array.from({ length: 6 }).map((_, featureIndex) => (
+                    <div
+                        key={`plan-feature-skeleton-${index}-${featureIndex}`}
+                        className="flex items-start gap-2.5"
+                    >
+                        <div className="mt-0.5 h-4 w-4 rounded bg-[#e3dbcf]" />
+                        <div className="h-4 w-4/5 rounded bg-[#eee8de]" />
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-auto h-11 w-full rounded-full bg-[#e0d6c8]" />
+        </article>
+    );
+}
+
+function PlanGridSkeleton() {
+    return (
+        <div className="grid gap-5 md:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+                <PlanCardSkeleton
+                    key={`subscription-plan-skeleton-${index}`}
+                    index={index}
+                />
+            ))}
+        </div>
+    );
+}
+
 export default function SubscriptionPageClient() {
     const queryClient = useQueryClient();
     const { openCheckout } = useRazorpay();
@@ -135,8 +203,9 @@ export default function SubscriptionPageClient() {
                     toast.info("Payment cancelled");
                 },
             });
-        } catch (err: any) {
-            if (err?.message !== "Payment dismissed") {
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "";
+            if (message !== "Payment dismissed") {
                 toast.error(formatApiError(err) || "Failed to initiate payment");
             }
         } finally {
@@ -171,9 +240,7 @@ export default function SubscriptionPageClient() {
             </header>
 
             <div className="mb-6 rounded-xl border border-[#e1dbd1] bg-[#f8f5ef] p-5">
-                {currentQuery.isPending && (
-                    <div className="h-16 animate-pulse rounded bg-[#ece8e2]" />
-                )}
+                {currentQuery.isPending && <CurrentSubscriptionSkeleton />}
 
                 {currentQuery.isError && (
                     <p className="text-sm text-[#c61b1b]">
@@ -211,14 +278,7 @@ export default function SubscriptionPageClient() {
             </div>
 
             {(currentQuery.isPending || pricingQuery.isPending) && (
-                <div className="grid gap-5 md:grid-cols-3">
-                    {Array.from({ length: 3 }).map((_, index) => (
-                        <div
-                            key={`subscription-plan-skeleton-${index}`}
-                            className="h-[560px] animate-pulse rounded-lg border border-border bg-cream"
-                        />
-                    ))}
-                </div>
+                <PlanGridSkeleton />
             )}
 
             {pricingQuery.isError && (

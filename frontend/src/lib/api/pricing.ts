@@ -243,3 +243,60 @@ export function verifyPayment(payload: VerifyPaymentRequest) {
         data: payload,
     });
 }
+
+export type PaymentStatus = "authorized" | "captured" | "failed" | "refunded";
+
+export interface PaymentRecord {
+    id: string;
+    transactionId: string;
+    orderId: string;
+    planName: string;
+    planSlug: string;
+    billingCycle: BillingCycle;
+    amount: number;
+    currencyCode: string;
+    status: PaymentStatus;
+    method: string | null;
+    methodDetail: string | null;
+    errorCode: string | null;
+    errorDescription: string | null;
+    capturedAt: string | null;
+    createdAt: string;
+}
+
+export interface PaymentHistoryParams {
+    page?: number;
+    limit?: number;
+    method?: string;
+    date_from?: string;
+    date_to?: string;
+}
+
+export interface PaginationMeta {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+}
+
+export interface PaymentHistoryResponse {
+    data: PaymentRecord[];
+    pagination: PaginationMeta;
+}
+
+export function getPaymentHistory(params?: PaymentHistoryParams) {
+    return apiRequest<PaymentHistoryResponse>({
+        method: "GET",
+        url: API_ENDPOINTS.PAYMENTS.HISTORY,
+        params,
+    });
+}
+
+export function getPaymentMethods() {
+    return apiRequest<string[]>({
+        method: "GET",
+        url: API_ENDPOINTS.PAYMENTS.METHODS,
+    });
+}
