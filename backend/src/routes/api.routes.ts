@@ -10,6 +10,7 @@ import {
     postUsageCheck,
     postUsageRecord,
 } from "../controllers/usage.controller";
+import { postCreateOrder, postVerifyPayment } from "../controllers/payment.controller";
 import { authenticate } from "../middlewares/authenticate";
 import { planSlugSchema, pricingQuerySchema } from "../models/pricing.model";
 import {
@@ -61,5 +62,15 @@ export default async function apiRoutes(fastify: FastifyInstance) {
         preHandler: authenticate,
         schema: usageRecordSchema,
         handler: postUsageRecord,
+    });
+
+    fastify.post("/payments/create-order", {
+        preHandler: authenticate,
+        handler: postCreateOrder,
+    });
+
+    fastify.post("/payments/verify", {
+        preHandler: authenticate,
+        handler: postVerifyPayment,
     });
 }

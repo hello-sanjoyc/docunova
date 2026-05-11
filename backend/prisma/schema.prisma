@@ -110,6 +110,25 @@ enum BillingCycle {
   @@map("billing_cycle")
 }
 
+enum PaymentOrderStatus {
+  CREATED
+  ATTEMPTED
+  PAID
+  FAILED
+  EXPIRED
+
+  @@map("payment_order_status")
+}
+
+enum PaymentTransactionStatus {
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+
+  @@map("payment_transaction_status")
+}
+
 model Organization {
   id              BigInt   @id @default(autoincrement()) @db.BigInt
   uuid            String   @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -184,6 +203,7 @@ model User {
   searchHistory                   SearchHistory[]
   subscriptions                   Subscription[]
   usageRecords                    UsageRecord[]
+  paymentOrders                   PaymentOrder[]
 
   @@unique([organizationId, email], map: "uq_users_org_email")
   @@index([organizationId, email], map: "idx_users_org_email")
@@ -208,6 +228,7 @@ model Plan {
   limits        PlanLimit[]
   prices        PlanPrice[]
   subscriptions Subscription[]
+  paymentOrders PaymentOrder[]
 
   @@index([isActive, sortOrder], map: "idx_plans_active_sort")
   @@map("plans")
@@ -262,6 +283,7 @@ model Region {
 
   prices        PlanPrice[]
   subscriptions Subscription[]
+  paymentOrders PaymentOrder[]
 
   @@map("regions")
 }
@@ -545,6 +567,7 @@ model Subscription {
   plan         Plan          @relation(fields: [planId], references: [id], onDelete: Restrict)
   region       Region        @relation(fields: [regionCode], references: [code], onDelete: Restrict)
   usageRecords UsageRecord[]
+  paymentOrders PaymentOrder[]
 
   @@index([userId, status], map: "idx_subscriptions_user_status")
   @@index([planId], map: "idx_subscriptions_plan")
@@ -734,4 +757,77 @@ model SearchHistory {
   @@index([userId, createdAt(sort: Desc)], map: "idx_search_history_user_time")
   @@index([organizationId, createdAt(sort: Desc)], map: "idx_search_history_org_time")
   @@map("search_history")
+}
+
+model PaymentOrder {
+  id              BigInt             @id @default(autoincrement()) @db.BigInt
+  uuid            String             @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          BigInt             @map("user_id") @db.BigInt
+  planId          BigInt             @map("plan_id") @db.BigInt
+  regionCode      String             @map("region_code") @db.VarChar(20)
+  billingCycle    BillingCycle       @map("billing_cycle")
+  razorpayOrderId String             @unique @map("razorpay_order_id") @db.VarChar(100)
+  amount          Decimal            @db.Decimal(18, 4)
+  currencyCode    String             @map("currency_code") @db.VarChar(10)
+  status          PaymentOrderStatus @default(CREATED)
+  subscriptionId  BigInt?            @map("subscription_id") @db.BigInt
+  notes           Json?
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         Plan                 @relation(fields: [planId], references: [id], onDelete: Restrict)
+  region       Region               @relation(fields: [regionCode], references: [code], onDelete: Restrict)
+  subscription Subscription?        @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  transactions PaymentTransaction[]
+
+  @@index([userId], map: "idx_payment_orders_user")
+  @@index([razorpayOrderId], map: "idx_payment_orders_rzp_order")
+  @@index([status], map: "idx_payment_orders_status")
+  @@map("payment_orders")
+}
+
+model PaymentTransaction {
+  id                BigInt                   @id @default(autoincrement()) @db.BigInt
+  paymentOrderId    BigInt                   @map("payment_order_id") @db.BigInt
+  razorpayPaymentId String                   @unique @map("razorpay_payment_id") @db.VarChar(100)
+  razorpaySignature String?                  @map("razorpay_signature") @db.Text
+  amount            Decimal                  @db.Decimal(18, 4)
+  currencyCode      String                   @map("currency_code") @db.VarChar(10)
+  status            PaymentTransactionStatus
+  method            String?                  @db.VarChar(50)
+  bank              String?                  @db.VarChar(100)
+  wallet            String?                  @db.VarChar(100)
+  vpa               String?                  @db.VarChar(100)
+  cardNetwork       String?                  @map("card_network") @db.VarChar(50)
+  cardLast4         String?                  @map("card_last4") @db.VarChar(4)
+  email             String?                  @db.VarChar(255)
+  contact           String?                  @db.VarChar(20)
+  errorCode         String?                  @map("error_code") @db.VarChar(100)
+  errorDescription  String?                  @map("error_description") @db.Text
+  rawPayload        Json?                    @map("raw_payload")
+  capturedAt        DateTime?                @map("captured_at") @db.Timestamptz(6)
+  createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order PaymentOrder @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
+
+  @@index([paymentOrderId], map: "idx_payment_txn_order")
+  @@index([razorpayPaymentId], map: "idx_payment_txn_rzp_payment")
+  @@map("payment_transactions")
+}
+
+model WebhookEvent {
+  id          BigInt    @id @default(autoincrement()) @db.BigInt
+  source      String    @db.VarChar(50)
+  eventType   String    @map("event_type") @db.VarChar(100)
+  entityId    String    @map("entity_id") @db.VarChar(100)
+  payload     Json
+  status      String    @default("received") @db.VarChar(20)
+  errorMsg    String?   @map("error_msg") @db.Text
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([source, eventType], map: "idx_payment_webhook_events_source_type")
+  @@index([entityId], map: "idx_payment_webhook_events_entity")
+  @@map("payment_webhook_events")
 }

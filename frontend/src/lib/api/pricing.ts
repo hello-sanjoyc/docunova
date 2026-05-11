@@ -205,3 +205,41 @@ export function recordUsage(payload: UsageRecordRequest) {
         data: payload,
     });
 }
+
+export interface CreateOrderRequest {
+    plan_slug: string;
+    billing_cycle: BillingCycle;
+}
+
+export interface CreateOrderResponse {
+    orderId: string;
+    amount: number;
+    currency: string;
+    keyId: string;
+    name: string;
+    description: string;
+    prefill: { name: string; email: string };
+    dbOrderId: string;
+}
+
+export interface VerifyPaymentRequest {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+}
+
+export function createPaymentOrder(payload: CreateOrderRequest) {
+    return apiRequest<CreateOrderResponse>({
+        method: "POST",
+        url: API_ENDPOINTS.PAYMENTS.CREATE_ORDER,
+        data: payload,
+    });
+}
+
+export function verifyPayment(payload: VerifyPaymentRequest) {
+    return apiRequest<{ success: boolean; subscription: SubscriptionSummary }>({
+        method: "POST",
+        url: API_ENDPOINTS.PAYMENTS.VERIFY,
+        data: payload,
+    });
+}

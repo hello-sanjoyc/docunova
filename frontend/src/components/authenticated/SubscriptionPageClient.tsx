@@ -5,14 +5,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 import {
     cancelSubscription,
+    createPaymentOrder,
     createSubscription,
     getCurrentSubscription,
     getPricing,
+    verifyPayment,
 } from "@/lib/api/pricing";
 import type { BillingCycle } from "@/lib/api/pricing";
 import { formatApiError } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery } from "@/lib/query/apiQuery";
 import { queryKeys } from "@/lib/query/queryKeys";
+import { useRazorpay } from "@/lib/hooks/useRazorpay";
 import BillingCycleToggle from "@/components/pricing/BillingCycleToggle";
 import PlanCard from "@/components/pricing/PlanCard";
 
@@ -29,8 +32,10 @@ function formatDate(value: string | null) {
 
 export default function SubscriptionPageClient() {
     const queryClient = useQueryClient();
+    const { openCheckout } = useRazorpay();
     const [selectedBillingCycle, setSelectedBillingCycle] =
         useState<BillingCycle | null>(null);
+    const [payingPlanSlug, setPayingPlanSlug] = useState<string | null>(null);
 
     const currentQuery = useApiQuery({
         queryKey: queryKeys.subscriptions.current(),
@@ -58,6 +63,7 @@ export default function SubscriptionPageClient() {
         queryClient.invalidateQueries({ queryKey: queryKeys.usage.summary() });
     };
 
+    // For free/starter plan — no payment needed
     const subscribeMutation = useApiMutation({
         mutationFn: (planSlug: string) =>
             createSubscription({
@@ -80,12 +86,63 @@ export default function SubscriptionPageClient() {
         mutationFn: cancelSubscription,
         onSuccess: () => {
             refreshSubscriptionState();
-            toast.info("Subscription cancellation recorded");
+            toast.info("Subscription cancelled");
         },
         onError: (error) => {
             toast.error(formatApiError(error));
         },
     });
+
+    const handleChoosePlan = async (planSlug: string) => {
+        const cycle =
+            selectedBillingCycle ??
+            currentQuery.data?.billingCycle ??
+            "monthly";
+
+        // Free plan — no payment
+        if (planSlug === "starter") {
+            subscribeMutation.mutate(planSlug);
+            return;
+        }
+
+        setPayingPlanSlug(planSlug);
+        try {
+            const order = await createPaymentOrder({ plan_slug: planSlug, billing_cycle: cycle });
+
+            await openCheckout({
+                key: order.keyId,
+                amount: order.amount,
+                currency: order.currency,
+                name: order.name,
+                description: order.description,
+                order_id: order.orderId,
+                prefill: order.prefill,
+                theme: { color: "#3b5bdb" },
+                onSuccess: async (response) => {
+                    try {
+                        await verifyPayment({
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_signature: response.razorpay_signature,
+                        });
+                        refreshSubscriptionState();
+                        toast.success("Payment successful! Subscription activated.");
+                    } catch (err) {
+                        toast.error(formatApiError(err) || "Payment verification failed");
+                    }
+                },
+                onDismiss: () => {
+                    toast.info("Payment cancelled");
+                },
+            });
+        } catch (err: any) {
+            if (err?.message !== "Payment dismissed") {
+                toast.error(formatApiError(err) || "Failed to initiate payment");
+            }
+        } finally {
+            setPayingPlanSlug(null);
+        }
+    };
 
     const pricing = pricingQuery.data;
     const current = currentQuery.data;
@@ -101,8 +158,7 @@ export default function SubscriptionPageClient() {
                         Subscription
                     </h1>
                     <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#6f675e]">
-                        Manage your current plan and switch tiers. Payment collection is
-                        intentionally not connected yet.
+                        Manage your current plan and switch tiers.
                     </p>
                 </div>
 
@@ -175,6 +231,7 @@ export default function SubscriptionPageClient() {
                 <div className="grid gap-5 md:grid-cols-3">
                     {plans.map((plan) => {
                         const isCurrent = current?.plan.slug === plan.slug;
+                        const isPaying = payingPlanSlug === plan.slug;
                         return (
                             <PlanCard
                                 key={plan.slug}
@@ -184,13 +241,10 @@ export default function SubscriptionPageClient() {
                                 features={plan.features}
                                 billingCycle={billingCycle}
                                 highlighted={plan.slug === "professional"}
-                                onChoose={(planSlug) => subscribeMutation.mutate(planSlug)}
+                                onChoose={handleChoosePlan}
                                 actionLabel={isCurrent ? "Current Plan" : undefined}
-                                busy={
-                                    subscribeMutation.isPending &&
-                                    subscribeMutation.variables === plan.slug
-                                }
-                                disabled={isCurrent}
+                                busy={isPaying || (subscribeMutation.isPending && subscribeMutation.variables === plan.slug)}
+                                disabled={isCurrent || !!payingPlanSlug}
                             />
                         );
                     })}

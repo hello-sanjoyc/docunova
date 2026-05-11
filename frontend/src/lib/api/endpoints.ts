@@ -52,6 +52,10 @@ export const API_ENDPOINTS = {
         CHECK: "/api/usage/check",
         RECORD: "/api/usage/record",
     },
+    PAYMENTS: {
+        CREATE_ORDER: "/api/payments/create-order",
+        VERIFY: "/api/payments/verify",
+    },
     ORGANIZATIONS: {
         MEMBERS:    "/organizations/me/members",
         INVITATION:        (token: string) => `/organizations/invitations/${token}`,

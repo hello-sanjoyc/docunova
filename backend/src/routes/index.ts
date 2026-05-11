@@ -6,6 +6,7 @@ import aiRoutes from './ai.routes';
 import searchRoutes from './search.routes';
 import organizationRoutes from './organization.routes';
 import apiRoutes from './api.routes';
+import webhookRoutes from './webhook.routes';
 
 export default async function registerRoutes(fastify: FastifyInstance) {
   fastify.register(apiRoutes, { prefix: '/api' });
@@ -15,4 +16,5 @@ export default async function registerRoutes(fastify: FastifyInstance) {
   fastify.register(aiRoutes, { prefix: '/ai' });
   fastify.register(searchRoutes, { prefix: '/search' });
   fastify.register(organizationRoutes, { prefix: '/organizations' });
+  fastify.register(webhookRoutes, { prefix: '/webhooks' });
 }
