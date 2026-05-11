@@ -109,10 +109,32 @@ export async function verifyAndActivatePayment(
     // 2. Fetch order from DB
     const dbOrder = await prisma.paymentOrder.findUnique({
         where: { razorpayOrderId: body.razorpay_order_id },
-        include: { user: { select: { id: true, uuid: true } } },
+        include: {
+            user: { select: { id: true, uuid: true } },
+            subscription: { include: { plan: true } },
+        },
     });
     if (!dbOrder) throw Object.assign(new Error("Order not found"), { statusCode: 404 });
     if (dbOrder.user.uuid !== actorUserUuid) throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+
+    // Idempotency: order already processed successfully — return existing subscription
+    if (dbOrder.status === "PAID" && dbOrder.subscription) {
+        const plan = await getPlanBySlug(dbOrder.subscription.plan.slug, {
+            region_code: dbOrder.regionCode,
+        });
+        return {
+            success: true,
+            subscription: {
+                id: dbOrder.subscription.id.toString(),
+                status: dbOrder.subscription.status.toLowerCase(),
+                billingCycle: dbOrder.subscription.billingCycle.toLowerCase(),
+                regionCode: dbOrder.subscription.regionCode,
+                currentPeriodStart: dbOrder.subscription.currentPeriodStart,
+                currentPeriodEnd: dbOrder.subscription.currentPeriodEnd,
+                plan,
+            },
+        };
+    }
 
     // 3. Fetch payment details from Razorpay
     let rzpPayment: any;
@@ -126,9 +148,16 @@ export async function verifyAndActivatePayment(
 
     // 4. Create transaction record + activate subscription in a single DB transaction
     const result = await prisma.$transaction(async (tx) => {
-        // Record transaction
-        const txn = await tx.paymentTransaction.create({
-            data: {
+        // Upsert transaction (guard against duplicate webhook + verify race)
+        const txn = await tx.paymentTransaction.upsert({
+            where: { razorpayPaymentId: body.razorpay_payment_id },
+            update: {
+                status: "CAPTURED",
+                razorpaySignature: body.razorpay_signature,
+                rawPayload: rzpPayment ?? {},
+                capturedAt: now,
+            },
+            create: {
                 paymentOrderId: dbOrder.id,
                 razorpayPaymentId: body.razorpay_payment_id,
                 razorpaySignature: body.razorpay_signature,

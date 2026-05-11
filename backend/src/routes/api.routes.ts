@@ -11,6 +11,7 @@ import {
     postUsageRecord,
 } from "../controllers/usage.controller";
 import { postCreateOrder, postVerifyPayment } from "../controllers/payment.controller";
+import { createOrderSchema, verifyPaymentSchema } from "../models/payment.model";
 import { authenticate } from "../middlewares/authenticate";
 import { planSlugSchema, pricingQuerySchema } from "../models/pricing.model";
 import {
@@ -66,11 +67,13 @@ export default async function apiRoutes(fastify: FastifyInstance) {
 
     fastify.post("/payments/create-order", {
         preHandler: authenticate,
+        schema: createOrderSchema,
         handler: postCreateOrder,
     });
 
     fastify.post("/payments/verify", {
         preHandler: authenticate,
+        schema: verifyPaymentSchema,
         handler: postVerifyPayment,
     });
 }
