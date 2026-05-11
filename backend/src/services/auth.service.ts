@@ -236,77 +236,41 @@ async function ensureRoleId(
     return role.id;
 }
 
-async function getDefaultOrganizationId(options?: {
+async function createOrganizationForUser(options?: {
     organizationName?: string;
     fallbackFullName?: string;
 }) {
-    const organizationDelegate = (prisma as unknown as {
-        organization?: {
-            findFirst: (args: unknown) => Promise<{ id: bigint } | null>;
-            create: (args: unknown) => Promise<{ id: bigint }>;
-        };
-    }).organization;
-
-    if (organizationDelegate?.findFirst) {
-        const existing = await organizationDelegate.findFirst({
-            orderBy: { id: "asc" },
-            select: { id: true },
-        });
-
-        if (existing) {
-            return existing.id;
-        }
-
-        const orgName =
-            options?.organizationName?.trim() ||
-            options?.fallbackFullName?.trim() ||
-            "Default Organization";
-        const slugBase = orgName
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "")
-            .slice(0, 120) || "default-organization";
-        const slug = `${slugBase}-${Date.now()}`;
-        const organization = await organizationDelegate.create({
-            data: {
-                name: orgName,
-                slug,
-            },
-            select: { id: true },
-        });
-
-        return organization.id;
-    }
-
-    // Fallback for stale Prisma clients where `prisma.organization` is missing
-    // at runtime but the database schema already contains `organizations`.
-    const existing = await prisma.$queryRaw<{ id: bigint }[]>`
-        SELECT id
-        FROM organizations
-        ORDER BY id ASC
-        LIMIT 1
-    `;
-
-    if (existing.length > 0) {
-        return existing[0].id;
-    }
-
     const orgName =
         options?.organizationName?.trim() ||
         options?.fallbackFullName?.trim() ||
-        "Default Organization";
+        "My Organization";
     const slugBase = orgName
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "")
-        .slice(0, 120) || "default-organization";
+        .slice(0, 120) || "my-organization";
     const slug = `${slugBase}-${Date.now()}`;
+
+    const organizationDelegate = (prisma as unknown as {
+        organization?: {
+            create: (args: unknown) => Promise<{ id: bigint }>;
+        };
+    }).organization;
+
+    if (organizationDelegate?.create) {
+        const organization = await organizationDelegate.create({
+            data: { name: orgName, slug },
+            select: { id: true },
+        });
+        return organization.id;
+    }
+
+    // Fallback for stale Prisma clients
     const created = await prisma.$queryRaw<{ id: bigint }[]>`
         INSERT INTO organizations (name, slug)
         VALUES (${orgName}, ${slug})
         RETURNING id
     `;
-
     return created[0].id;
 }
 
@@ -392,7 +356,7 @@ export async function registerUser(
     const roleCode: OrganizationRoleCode = invitationRole ?? "admin";
     const organizationId =
         invitation?.organizationId ??
-        (await getDefaultOrganizationId({
+        (await createOrganizationForUser({
             organizationName: input.organizationName ?? input.organisationName,
             fallbackFullName: input.name,
         }));
@@ -995,7 +959,7 @@ export async function authenticateGoogleUser(
     const roleCode: OrganizationRoleCode = invitationRole ?? "admin";
     const organizationId =
         invitation?.organizationId ??
-        (await getDefaultOrganizationId({
+        (await createOrganizationForUser({
             fallbackFullName: profile.name ?? profile.given_name ?? "",
         }));
 
