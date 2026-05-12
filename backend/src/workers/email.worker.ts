@@ -43,7 +43,8 @@ export function startEmailWorker(): Worker<EmailJobData> {
         appLogger.error("[email-worker] Job failed", {
             jobId: job?.id,
             name: job?.name,
-            err,
+            errorMessage: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
         });
     });
 

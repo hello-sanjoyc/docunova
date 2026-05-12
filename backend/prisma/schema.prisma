@@ -204,6 +204,7 @@ model User {
   subscriptions                   Subscription[]
   usageRecords                    UsageRecord[]
   paymentOrders                   PaymentOrder[]
+  chatMessages                    DocumentChatMessage[]
 
   @@unique([organizationId, email], map: "uq_users_org_email")
   @@index([organizationId, email], map: "idx_users_org_email")
@@ -538,6 +539,8 @@ model Document {
   aiSummaries     DocumentAiSummary[]
   classifications DocumentClassification[]
   usageRecords    UsageRecord[]
+  chunks          DocumentChunk[]
+  chatMessages    DocumentChatMessage[]
 
   @@index([organizationId, folderId], map: "idx_documents_org_folder")
   @@index([ownerUserId], map: "idx_documents_owner")
@@ -830,4 +833,36 @@ model WebhookEvent {
   @@index([source, eventType], map: "idx_payment_webhook_events_source_type")
   @@index([entityId], map: "idx_payment_webhook_events_entity")
   @@map("payment_webhook_events")
+}
+
+model DocumentChunk {
+  id         BigInt   @id @default(autoincrement()) @db.BigInt
+  documentId BigInt   @map("document_id") @db.BigInt
+  chunkIndex Int      @map("chunk_index")
+  content    String
+  pageNumber Int?     @map("page_number")
+  startChar  Int      @map("start_char")
+  endChar    Int      @map("end_char")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, chunkIndex], map: "idx_doc_chunks_doc_index")
+  @@map("document_chunks")
+}
+
+model DocumentChatMessage {
+  id         BigInt   @id @default(autoincrement()) @db.BigInt
+  uuid       String   @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId BigInt   @map("document_id") @db.BigInt
+  userId     BigInt   @map("user_id") @db.BigInt
+  role       String   @db.VarChar(20)
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, userId, createdAt(sort: Desc)], map: "idx_chat_messages_doc_user")
+  @@map("document_chat_messages")
 }

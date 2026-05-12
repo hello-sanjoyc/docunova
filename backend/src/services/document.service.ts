@@ -16,6 +16,7 @@ import {
 import { generatePdfThumbnail } from "./pdf.service";
 import { enqueueAiSummarize } from "../queues/ai.queue";
 import { enqueueOcr } from "../queues/ocr.queue";
+import { enqueueDocumentChunk } from "../queues/chunk.queue";
 import { createLogger } from "../config/logger";
 import { invalidateRecentStatsCache } from "./search.service";
 import {
@@ -686,6 +687,16 @@ export async function uploadDocument(input: UploadDocumentInput) {
                     });
             }
         }
+
+        // Always enqueue chunking so document is ready for chat queries.
+        // The worker retries with backoff until text is available (post-OCR).
+        enqueueDocumentChunk(doc.uuid, input.userId)
+            .then((jobId) => {
+                logger.info("Document chunk job queued", { documentUuid: doc.uuid, jobId });
+            })
+            .catch((err) => {
+                logger.error("Document chunk enqueue failed", { documentUuid: doc.uuid, err });
+            });
 
         logger.info("Document upload pipeline completed", {
             documentUuid: doc.uuid,

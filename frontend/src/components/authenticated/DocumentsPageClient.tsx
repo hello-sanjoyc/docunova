@@ -4,7 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, FilePlus2, FileText, Trash2 } from "lucide-react";
+import {
+    Download,
+    FilePlus2,
+    FileText,
+    MessagesSquare,
+    Trash2,
+} from "lucide-react";
 import { toast } from "react-toastify";
 import {
     deleteDocument,
@@ -21,6 +27,7 @@ import { DOCUMENT_STATUS_OPTIONS } from "@/components/authenticated/documentFilt
 import ConfirmActionDialog from "@/components/authenticated/ConfirmActionDialog";
 import { useApiQuery } from "@/lib/query/apiQuery";
 import { queryKeys } from "@/lib/query/queryKeys";
+import DocumentChatWindow from "./DocumentChatWindow";
 import UsageCard from "./UsageCard";
 
 const PAGE_SIZE = 10;
@@ -94,6 +101,7 @@ export default function DocumentsPageClient() {
     const [deleteError, setDeleteError] = useState("");
 
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
+    const [chatDocument, setChatDocument] = useState<DocumentItem | null>(null);
     const searchQuery = (searchParams?.get("q") || "").trim();
     const statusFilterFromUrl = searchParams?.get("status") || "";
     const statusFilter = DOCUMENT_STATUS_OPTIONS.some(
@@ -207,6 +215,11 @@ export default function DocumentsPageClient() {
     function handleDownloadSummaryPdf(document: DocumentItem) {
         handleDownloadSummaryDocumentPdf({ document });
     }
+
+    function handleOpenChat(document: DocumentItem) {
+        setChatDocument(document);
+    }
+
     return (
         <>
             {deleteTargetId && (
@@ -222,6 +235,12 @@ export default function DocumentsPageClient() {
                         setDeleteTargetId(null);
                         setDeleteError("");
                     }}
+                />
+            )}
+            {chatDocument && (
+                <DocumentChatWindow
+                    document={chatDocument}
+                    onClose={() => setChatDocument(null)}
                 />
             )}
             <section className="max-w-[1180px]">
@@ -445,6 +464,26 @@ export default function DocumentsPageClient() {
                                                         className="hover:text-[#6a6259] disabled:opacity-50"
                                                     >
                                                         <FileText
+                                                            size={16}
+                                                            strokeWidth={2}
+                                                            aria-hidden="true"
+                                                        />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        title="Chat with Document"
+                                                        disabled={
+                                                            busyDocumentId ===
+                                                            document.id
+                                                        }
+                                                        onClick={() =>
+                                                            handleOpenChat(
+                                                                document,
+                                                            )
+                                                        }
+                                                        className="hover:text-[#6a6259] disabled:opacity-50"
+                                                    >
+                                                        <MessagesSquare
                                                             size={16}
                                                             strokeWidth={2}
                                                             aria-hidden="true"

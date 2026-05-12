@@ -71,6 +71,7 @@ export async function sendSecurityAlertEmail(input: SecurityAlertInput) {
             subject: copy.subject,
             template: 'security-alert',
             templateData: {
+                subject: copy.subject,
                 name: user.fullName ?? 'there',
                 title: copy.title,
                 description: copy.description,
