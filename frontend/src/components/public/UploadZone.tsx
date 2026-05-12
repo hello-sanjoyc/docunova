@@ -66,9 +66,9 @@ export default function UploadZone() {
         return (
             <div
                 id="upload_zone"
-                className={`${zoneClass} rounded-2xl p-8 text-center`}
+                className={`${zoneClass} rounded-2xl p-4 text-center`}
             >
-                <div className="flex items-center justify-center gap-3 py-2">
+                <div className="flex items-center justify-center gap-3 py-1">
                     {/* Staggered shimmer via nth-child delay in globals.css */}
                     <div className="flex gap-1">
                         <span className="processing-dot w-2 h-2 rounded-full bg-sage inline-block" />
@@ -86,7 +86,7 @@ export default function UploadZone() {
     return (
         <div
             id="upload_zone"
-            className={`${zoneClass} rounded-2xl p-8 text-center cursor-pointer`}
+            className={`${zoneClass} rounded-2xl p-4 text-center cursor-pointer`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -96,10 +96,10 @@ export default function UploadZone() {
             onKeyDown={(e) => e.key === "Enter" && handleClick()}
             aria-label="Upload contract document"
         >
-            <div className="w-12 h-12 bg-amber-light rounded-xl flex items-center justify-center mx-auto mb-4">
+            <div className="w-9 h-9 bg-amber-light rounded-lg flex items-center justify-center mx-auto mb-2">
                 <svg
-                    width="22"
-                    height="22"
+                    width="18"
+                    height="18"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="#C8852A"
@@ -112,15 +112,15 @@ export default function UploadZone() {
                     />
                 </svg>
             </div>
-            <p className="font-medium text-ink mb-1">
+            <p className="font-medium text-sm text-ink mb-0.5">
                 Drop your contract here....
             </p>
-            <p className="text-sm text-muted mb-4">
+            <p className="text-xs text-muted mb-3">
                 PDF or DOCX — up to 50 pages
             </p>
             <button
                 type="button"
-                className="bg-ink text-cream text-sm px-6 py-2.5 rounded-full hover:bg-amber transition-colors font-medium"
+                className="bg-ink text-cream text-xs px-5 py-2 rounded-full hover:bg-amber transition-colors font-medium"
                 onClick={(e) => {
                     e.stopPropagation();
                     handleClick();

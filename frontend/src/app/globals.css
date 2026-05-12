@@ -53,6 +53,11 @@
   100% { opacity: 1; }
 }
 
+@keyframes heroCapsuleIn {
+  0%   { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
 /* Used by processing dots and shimmer placeholders */
 @keyframes shimmer {
   0%   { opacity: 0.6; }
@@ -207,6 +212,11 @@ body::after {
 .anim-delay-3 { animation-delay: 0.3s; opacity: 0; }
 .anim-delay-4 { animation-delay: 0.4s; opacity: 0; }
 .anim-delay-5 { animation-delay: 0.5s; opacity: 0; }
+
+.hero-chat-copy .hero-capsule {
+  opacity: 0;
+  animation: heroCapsuleIn 0.45s ease forwards;
+}
 
 /* ── Processing dots ────────────────────────────────────────────────────── */
 /*
