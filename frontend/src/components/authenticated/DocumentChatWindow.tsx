@@ -9,6 +9,7 @@ import { getAccessToken } from "@/lib/api/session";
 
 const WELCOME_MESSAGE =
     "Hi, I'm **Nova AI**.\n\nI can help you search, summarize, and extract insights from this document.\n\nWhat would you like to know?";
+const HEADING_TAGS = ["h3", "h4", "h5"] as const;
 
 type ChatMessage = {
     id: string;
@@ -92,7 +93,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
         if (headingMatch) {
             flushList();
             const level = headingMatch[1].length;
-            const HeadingTag = (`h${level + 2}`) as keyof JSX.IntrinsicElements;
+            const HeadingTag = HEADING_TAGS[level - 1];
             nodes.push(
                 <HeadingTag key={key} className="mt-2 font-semibold text-[#2f2a25]">
                     {inlineFormat(headingMatch[2], key)}
