@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/query/apiQuery";
 import {
     Download,
     FilePlus2,
@@ -97,8 +98,28 @@ export default function DocumentsPageClient() {
     const searchParams = useSearchParams();
     const [page, setPage] = useState(1);
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-    const [deleteLoading, setDeleteLoading] = useState(false);
-    const [deleteError, setDeleteError] = useState("");
+
+    const deleteMutation = useApiMutation({
+        mutationFn: (documentId: string) => deleteDocument(documentId),
+        onMutate: (documentId) => {
+            setBusyDocumentId(documentId);
+        },
+        onSuccess: () => {
+            toast.success("Document deleted");
+            setDeleteTargetId(null);
+            void Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["documents", "listing"] }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.documents.totalUploaded() }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.dashboardOverview() }),
+            ]);
+        },
+        onError: (error: unknown) => {
+            toast.error(formatApiError(error));
+        },
+        onSettled: () => {
+            setBusyDocumentId(null);
+        },
+    });
 
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
     const [chatDocument, setChatDocument] = useState<DocumentItem | null>(null);
@@ -175,33 +196,9 @@ export default function DocumentsPageClient() {
         return `Showing ${start}-${end} of ${total} records`;
     }, [page, total]);
 
-    async function handleDeleteConfirm() {
+    function handleDeleteConfirm() {
         if (!deleteTargetId) return;
-        setDeleteLoading(true);
-        setDeleteError("");
-        setBusyDocumentId(deleteTargetId);
-        try {
-            await deleteDocument(deleteTargetId);
-            toast.success("Document deleted");
-            setDeleteTargetId(null);
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: ["documents", "listing"],
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.documents.totalUploaded(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.user.dashboardOverview(),
-                }),
-            ]);
-        } catch (error) {
-            setDeleteError(formatApiError(error));
-            toast.error(formatApiError(error));
-        } finally {
-            setDeleteLoading(false);
-            setBusyDocumentId(null);
-        }
+        deleteMutation.mutate(deleteTargetId);
     }
 
     async function handleDownload(documentId: string, filename: string) {
@@ -227,13 +224,13 @@ export default function DocumentsPageClient() {
                     title="Delete this document?"
                     message="This will move the document to Trash. You can restore it later."
                     confirmLabel="Yes, delete"
-                    loading={deleteLoading}
-                    error={deleteError}
+                    loading={deleteMutation.isPending}
+                    error={deleteMutation.error ? formatApiError(deleteMutation.error) : ""}
                     onConfirm={handleDeleteConfirm}
                     onCancel={() => {
-                        if (deleteLoading) return;
+                        if (deleteMutation.isPending) return;
                         setDeleteTargetId(null);
-                        setDeleteError("");
+                        deleteMutation.reset();
                     }}
                 />
             )}

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/query/apiQuery";
 import {
     Clock3,
     Shield,
@@ -82,7 +83,31 @@ export default function TeamPageClient() {
     const [selectedRole, setSelectedRole] =
         useState<OrganizationRoleCode>("admin");
     const [emailsInput, setEmailsInput] = useState("");
-    const [sending, setSending] = useState(false);
+
+    const inviteMutation = useApiMutation({
+        mutationFn: ({ role, emails }: { role: OrganizationRoleCode; emails: string[] }) =>
+            inviteMembers({ role, emails }),
+        onSuccess: (result) => {
+            const alreadyMembers = result.results.filter(
+                (r) => r.status === "already_member",
+            ).length;
+            if (result.sent > 0) {
+                toast.success(
+                    `Invitation sent to ${result.sent} member${result.sent === 1 ? "" : "s"} as ${roleLabel(selectedRole)}.`,
+                );
+            }
+            if (alreadyMembers > 0) {
+                toast.info(
+                    `${alreadyMembers} email${alreadyMembers === 1 ? " was" : "s were"} skipped — already active member${alreadyMembers === 1 ? "" : "s"}.`,
+                );
+            }
+            closeInviteModal();
+            void queryClient.invalidateQueries({ queryKey: queryKeys.team.members() });
+        },
+        onError: (error: unknown) => {
+            toast.error(formatApiError(error));
+        },
+    });
 
     const parsedEmails = useMemo(
         () =>
@@ -97,7 +122,7 @@ export default function TeamPageClient() {
     const hasInvalidEmail = parsedEmails.some(
         (email) => !emailRegex.test(email),
     );
-    const canSend = parsedEmails.length > 0 && !hasInvalidEmail && !sending;
+    const canSend = parsedEmails.length > 0 && !hasInvalidEmail && !inviteMutation.isPending;
 
     const members = membersQuery.data?.data ?? [];
     const loading = membersQuery.isPending || membersQuery.isFetching || subLoading;
@@ -111,7 +136,6 @@ export default function TeamPageClient() {
     function resetInviteForm() {
         setSelectedRole("admin");
         setEmailsInput("");
-        setSending(false);
     }
 
     function closeInviteModal() {
@@ -119,39 +143,9 @@ export default function TeamPageClient() {
         resetInviteForm();
     }
 
-    async function handleSendInvitation() {
+    function handleSendInvitation() {
         if (!canSend) return;
-
-        setSending(true);
-        try {
-            const result = await inviteMembers({
-                role: selectedRole,
-                emails: parsedEmails,
-            });
-
-            const alreadyMembers = result.results.filter(
-                (r) => r.status === "already_member",
-            ).length;
-
-            if (result.sent > 0) {
-                toast.success(
-                    `Invitation sent to ${result.sent} member${result.sent === 1 ? "" : "s"} as ${roleLabel(selectedRole)}.`,
-                );
-            }
-            if (alreadyMembers > 0) {
-                toast.info(
-                    `${alreadyMembers} email${alreadyMembers === 1 ? " was" : "s were"} skipped — already active member${alreadyMembers === 1 ? "" : "s"}.`,
-                );
-            }
-
-            closeInviteModal();
-            await queryClient.invalidateQueries({
-                queryKey: queryKeys.team.members(),
-            });
-        } catch (error) {
-            toast.error(formatApiError(error));
-            setSending(false);
-        }
+        inviteMutation.mutate({ role: selectedRole, emails: parsedEmails });
     }
 
     const selectedRoleMeta =
@@ -300,7 +294,7 @@ export default function TeamPageClient() {
                                 disabled={!canSend}
                                 className="h-10 rounded-xl border border-[#2abf88] bg-[#7ad6b2] px-4 text-sm font-medium text-[#043e2c] disabled:cursor-not-allowed disabled:opacity-55"
                             >
-                                {sending ? "Sending..." : "Send invitation"}
+                                {inviteMutation.isPending ? "Sending..." : "Send invitation"}
                             </button>
                         </div>
                     </div>

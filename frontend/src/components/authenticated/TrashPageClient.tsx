@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/query/apiQuery";
 import { Download, FileText, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import {
@@ -47,6 +48,28 @@ export default function TrashPageClient() {
     const queryClient = useQueryClient();
     const [page, setPage] = useState(1);
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
+
+    const restoreMutation = useApiMutation({
+        mutationFn: (documentId: string) => restoreDocument(documentId),
+        onMutate: (documentId) => {
+            setBusyDocumentId(documentId);
+        },
+        onSuccess: () => {
+            toast.success("Document restored");
+            void Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["documents", "trashListing"] }),
+                queryClient.invalidateQueries({ queryKey: ["documents", "listing"] }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.documents.totalUploaded() }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.dashboardOverview() }),
+            ]);
+        },
+        onError: (error: unknown) => {
+            toast.error(formatApiError(error));
+        },
+        onSettled: () => {
+            setBusyDocumentId(null);
+        },
+    });
     const trashDocumentsQuery = useApiQuery({
         queryKey: queryKeys.documents.trashListing({
             page,
@@ -89,30 +112,8 @@ export default function TrashPageClient() {
         });
     }
 
-    async function handleRestore(documentId: string) {
-        setBusyDocumentId(documentId);
-        try {
-            await restoreDocument(documentId);
-            toast.success("Document restored");
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: ["documents", "trashListing"],
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: ["documents", "listing"],
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.documents.totalUploaded(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.user.dashboardOverview(),
-                }),
-            ]);
-        } catch (error) {
-            toast.error(formatApiError(error));
-        } finally {
-            setBusyDocumentId(null);
-        }
+    function handleRestore(documentId: string) {
+        restoreMutation.mutate(documentId);
     }
 
     return (

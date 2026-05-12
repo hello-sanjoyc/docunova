@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/query/apiQuery";
 import {
     Clock3,
     Download,
@@ -62,8 +63,27 @@ export default function RecentActivitiesPageClient() {
     const queryClient = useQueryClient();
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-    const [deleteLoading, setDeleteLoading] = useState(false);
-    const [deleteError, setDeleteError] = useState("");
+
+    const deleteMutation = useApiMutation({
+        mutationFn: (documentId: string) => deleteDocument(documentId),
+        onMutate: (documentId) => {
+            setBusyDocumentId(documentId);
+        },
+        onSuccess: () => {
+            toast.success("Document deleted");
+            setDeleteTargetId(null);
+            void Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.activities.recent(20) }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.activities.stats() }),
+            ]);
+        },
+        onError: (error: unknown) => {
+            toast.error(formatApiError(error));
+        },
+        onSettled: () => {
+            setBusyDocumentId(null);
+        },
+    });
     const recentActivitiesQuery = useApiQuery({
         queryKey: queryKeys.activities.recent(20),
         queryFn: () => getRecentActivities(20),
@@ -108,30 +128,9 @@ export default function RecentActivitiesPageClient() {
         });
     }
 
-    async function handleDeleteConfirm() {
+    function handleDeleteConfirm() {
         if (!deleteTargetId) return;
-        setDeleteLoading(true);
-        setDeleteError("");
-        setBusyDocumentId(deleteTargetId);
-        try {
-            await deleteDocument(deleteTargetId);
-            toast.success("Document deleted");
-            setDeleteTargetId(null);
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.activities.recent(20),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.activities.stats(),
-                }),
-            ]);
-        } catch (error) {
-            setDeleteError(formatApiError(error));
-            toast.error(formatApiError(error));
-        } finally {
-            setDeleteLoading(false);
-            setBusyDocumentId(null);
-        }
+        deleteMutation.mutate(deleteTargetId);
     }
 
     function handleDownloadSummaryPdf(document: DocumentItem) {
@@ -177,13 +176,13 @@ export default function RecentActivitiesPageClient() {
                     title="Delete this document?"
                     message="This will move the document to Trash. You can restore it later."
                     confirmLabel="Yes, delete"
-                    loading={deleteLoading}
-                    error={deleteError}
+                    loading={deleteMutation.isPending}
+                    error={deleteMutation.error ? formatApiError(deleteMutation.error) : ""}
                     onConfirm={handleDeleteConfirm}
                     onCancel={() => {
-                        if (deleteLoading) return;
+                        if (deleteMutation.isPending) return;
                         setDeleteTargetId(null);
-                        setDeleteError("");
+                        deleteMutation.reset();
                     }}
                 />
             )}

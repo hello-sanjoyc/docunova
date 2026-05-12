@@ -225,6 +225,32 @@ export async function getRecentHistory(
     return messages.reverse();
 }
 
+export async function getChatHistory(
+    documentUuid: string,
+    userId: string,
+): Promise<Array<{ uuid: string; role: string; content: string; createdAt: Date }>> {
+    const user = await prisma.user.findUnique({
+        where: { uuid: userId },
+        select: { id: true },
+    });
+    if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+
+    const doc = await prisma.document.findUnique({
+        where: { uuid: documentUuid },
+        select: { id: true, ownerUserId: true },
+    });
+    if (!doc) throw Object.assign(new Error('Document not found'), { statusCode: 404 });
+    if (doc.ownerUserId !== user.id) throw Object.assign(new Error('Forbidden'), { statusCode: 403 });
+
+    const messages = await prisma.documentChatMessage.findMany({
+        where: { documentId: doc.id, userId: user.id },
+        orderBy: { createdAt: 'asc' },
+        select: { uuid: true, role: true, content: true, createdAt: true },
+    });
+
+    return messages;
+}
+
 // ── Streaming chat ────────────────────────────────────────────────────────────
 
 let _openaiClient: OpenAI | null = null;

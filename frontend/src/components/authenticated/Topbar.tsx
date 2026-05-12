@@ -45,7 +45,8 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
 
     useEffect(() => {
         function handleAvatarUpdated(event: Event) {
-            const detail = (event as CustomEvent<{ avatarUrl?: string }>).detail;
+            const detail = (event as CustomEvent<{ avatarUrl?: string }>)
+                .detail;
             const nextAvatarUrl = detail?.avatarUrl?.trim() || "";
             setFailedAvatarUrl("");
             queryClient.setQueryData<UserProfile | undefined>(
@@ -118,7 +119,7 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
                                 applyFilters();
                             }
                         }}
-                        placeholder="Search"
+                        placeholder="Search documents"
                         className="w-52 bg-transparent text-[#4f463e] outline-none placeholder:text-[#9a8f83]"
                     />
                 </div>
@@ -185,7 +186,11 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
                             onError={() => setFailedAvatarUrl(avatarUrl)}
                         />
                     ) : (
-                        <UserRound size={15} strokeWidth={2} aria-hidden="true" />
+                        <UserRound
+                            size={15}
+                            strokeWidth={2}
+                            aria-hidden="true"
+                        />
                     )}
                 </button>
             </div>

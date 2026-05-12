@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import { streamDocumentChat } from "../services/documentChat.service";
+import { streamDocumentChat, getChatHistory } from "../services/documentChat.service";
+import { successResponse } from "../utils/response";
 import { createLogger } from "../config/logger";
 import env from "../config/env";
 
@@ -83,4 +84,16 @@ export async function documentChat(
         write({ error: message });
         reply.raw.end();
     }
+}
+
+// GET /ai/chat/:documentId/history
+export async function chatHistory(
+    request: FastifyRequest<{ Params: DocumentIdParams }>,
+    reply: FastifyReply,
+) {
+    const messages = await getChatHistory(
+        request.params.documentId,
+        request.user.userId,
+    );
+    reply.send(successResponse("Chat history fetched", messages));
 }

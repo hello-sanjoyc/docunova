@@ -1,8 +1,6 @@
 "use client";
 
 import {
-    useCallback,
-    useEffect,
     useMemo,
     useRef,
     useState,
@@ -10,6 +8,7 @@ import {
     type DragEvent,
 } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 import {
     AlertTriangle,
@@ -32,6 +31,8 @@ import {
 } from "@/lib/api/documents";
 import { useSubscription } from "@/lib/hooks/useSubscription";
 import { formatApiError } from "@/lib/api/errors";
+import { useApiQuery, useApiMutation } from "@/lib/query/apiQuery";
+import { queryKeys } from "@/lib/query/queryKeys";
 import {
     handleDownload as handleDownloadDocument,
     handleDownloadSummaryPdf as handleDownloadSummaryDocumentPdf,
@@ -65,13 +66,8 @@ export default function DocumentsNewPageClient() {
     const { hasFeature } = useSubscription();
     const canShare = hasFeature("shareable_links");
     const uploadInputRef = useRef<HTMLInputElement>(null);
+    const queryClient = useQueryClient();
 
-    const [latestDocument, setLatestDocument] = useState<DocumentItem | null>(
-        null,
-    );
-    const [loading, setLoading] = useState(true);
-    const [listError, setListError] = useState("");
-    const [uploading, setUploading] = useState(false);
     const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
     const [dropActive, setDropActive] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
@@ -79,46 +75,57 @@ export default function DocumentsNewPageClient() {
     const [uploadState, setUploadState] = useState<
         "idle" | "uploading" | "uploadFailed"
     >("idle");
-    const [retryingSummary, setRetryingSummary] = useState(false);
 
-    const fetchLatestDocument = useCallback(async () => {
-        setLoading(true);
-        setListError("");
-        try {
-            const result = await listDocuments({
-                page: 1,
-                limit: 1,
-                sortBy: "uploadedAt",
-                sortOrder: "desc",
+    const latestDocQuery = useApiQuery({
+        queryKey: queryKeys.documents.listing({ page: 1, pageSize: 1, query: "", status: "" }),
+        queryFn: () => listDocuments({ page: 1, limit: 1, sortBy: "uploadedAt", sortOrder: "desc" }),
+        refetchInterval: (query) => {
+            const doc = query.state.data?.data?.[0];
+            return summaryCardStatus(doc?.status) === "PROCESSING" ? 6_000 : false;
+        },
+        staleTime: 0,
+    });
+
+    const latestDocument: DocumentItem | null = latestDocQuery.data?.data?.[0] ?? null;
+    const loading = latestDocQuery.isPending;
+    const listError = latestDocQuery.isError ? formatApiError(latestDocQuery.error) : "";
+
+    const uploadMutation = useApiMutation({
+        mutationFn: (file: File) => uploadDocument({ file }),
+        onSuccess: () => {
+            setUploadState("idle");
+            toast.success("Document uploaded");
+            void queryClient.invalidateQueries({
+                queryKey: queryKeys.documents.listing({ page: 1, pageSize: 1, query: "", status: "" }),
             });
-            setLatestDocument(result.data[0] ?? null);
-        } catch (error) {
-            const message = formatApiError(error);
-            setListError(message);
-            toast.error(message);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+        },
+        onError: (error: unknown) => {
+            setUploadState("uploadFailed");
+            toast.error(formatApiError(error));
+        },
+        onSettled: () => {
+            setDropActive(false);
+        },
+    });
 
-    useEffect(() => {
-        void fetchLatestDocument();
-    }, [fetchLatestDocument]);
+    const summaryRetryMutation = useApiMutation({
+        mutationFn: (documentId: string) => triggerDocumentSummary(documentId),
+        onSuccess: () => {
+            toast.success("Summary generation started");
+            void queryClient.invalidateQueries({
+                queryKey: queryKeys.documents.listing({ page: 1, pageSize: 1, query: "", status: "" }),
+            });
+        },
+        onError: (error: unknown) => {
+            toast.error(formatApiError(error));
+        },
+    });
 
     const latestMetadata = useMemo(
         () => toMetadataRecord(latestDocument?.metadataJson ?? null),
         [latestDocument],
     );
     const latestStatus = summaryCardStatus(latestDocument?.status);
-
-    useEffect(() => {
-        const isProcessing =
-            Boolean(latestDocument) && latestStatus === "PROCESSING";
-        if (!isProcessing) return;
-
-        const interval = setInterval(() => void fetchLatestDocument(), 6_000);
-        return () => clearInterval(interval);
-    }, [latestDocument, latestStatus, fetchLatestDocument]);
 
     const latestParties = metadataText(
         latestMetadata,
@@ -260,30 +267,17 @@ export default function DocumentsNewPageClient() {
     ]
         .filter(Boolean)
         .join(" · ");
+    const uploading = uploadMutation.isPending;
+    const retryingSummary = summaryRetryMutation.isPending;
+
     const canUploadAnother =
         !latestDocument ||
         latestDocument.status === "READY" ||
         latestDocument.status === "FAILED";
 
-    async function uploadFromFile(file: File) {
+    function uploadFromFile(file: File) {
         setUploadState("uploading");
-        setUploading(true);
-        try {
-            const document = await uploadDocument({ file });
-            setLatestDocument({
-                ...document,
-                status: summaryCardStatus(document.status),
-            });
-            setUploadState("idle");
-            toast.success("Document uploaded");
-            await fetchLatestDocument();
-        } catch (error) {
-            setUploadState("uploadFailed");
-            toast.error(formatApiError(error));
-        } finally {
-            setUploading(false);
-            setDropActive(false);
-        }
+        uploadMutation.mutate(file);
     }
 
     async function handleUploadChange(event: ChangeEvent<HTMLInputElement>) {
@@ -354,26 +348,9 @@ export default function DocumentsNewPageClient() {
         await ensureShareUrl();
     }
 
-    async function handleGenerateSummaryAgain() {
+    function handleGenerateSummaryAgain() {
         if (!latestDocument) return;
-        setRetryingSummary(true);
-        try {
-            await triggerDocumentSummary(latestDocument.id);
-            setLatestDocument((current) =>
-                current
-                    ? {
-                          ...current,
-                          status: "PROCESSING",
-                      }
-                    : current,
-            );
-            await fetchLatestDocument();
-            toast.success("Summary generation started");
-        } catch (error) {
-            toast.error(formatApiError(error));
-        } finally {
-            setRetryingSummary(false);
-        }
+        summaryRetryMutation.mutate(latestDocument.id);
     }
 
     async function handleCopyShareLink() {

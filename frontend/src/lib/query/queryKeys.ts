@@ -42,4 +42,7 @@ export const queryKeys = {
         history: (params: Record<string, unknown>) => ["payments", "history", params] as const,
         methods: () => ["payments", "methods"] as const,
     },
+    documentChat: {
+        history: (documentId: string) => ["documentChat", "history", documentId] as const,
+    },
 } as const;
