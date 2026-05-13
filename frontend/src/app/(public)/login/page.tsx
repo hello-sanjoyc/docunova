@@ -526,19 +526,19 @@ function LoginPageInner() {
 
             <p className="text-[12px] text-muted mt-8 text-center max-w-xs">
                 By signing in you agree to our{" "}
-                <a
-                    href="#"
+                <Link
+                    href="/terms-of-service"
                     className="underline hover:text-ink transition-colors"
                 >
                     Terms
-                </a>{" "}
+                </Link>{" "}
                 and{" "}
-                <a
-                    href="#"
+                <Link
+                    href="/privacy-policy"
                     className="underline hover:text-ink transition-colors"
                 >
                     Privacy Policy
-                </a>
+                </Link>
                 .
             </p>
         </div>

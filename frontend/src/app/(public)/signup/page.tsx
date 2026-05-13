@@ -576,19 +576,19 @@ function SignupPageInner() {
             {/* Legal footnote */}
             <p className="text-[12px] text-muted mt-8 text-center max-w-xs">
                 By creating an account you agree to our{" "}
-                <a
-                    href="#"
+                <Link
+                    href="/terms-of-service"
                     className="underline hover:text-ink transition-colors"
                 >
                     Terms
-                </a>{" "}
+                </Link>{" "}
                 and{" "}
-                <a
-                    href="#"
+                <Link
+                    href="/privacy-policy"
                     className="underline hover:text-ink transition-colors"
                 >
                     Privacy Policy
-                </a>
+                </Link>
                 .
             </p>
         </div>

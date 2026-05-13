@@ -3,7 +3,10 @@ import ScrollReveal from "./ScrollReveal";
 
 export default function Pricing() {
     return (
-        <ScrollReveal className="border-y border-border bg-parchment py-20">
+        <ScrollReveal
+            id="pricing"
+            className="border-y border-border bg-parchment py-20"
+        >
             <div className="mx-auto mb-10 max-w-2xl px-6 text-center">
                 <p className="mb-3 text-xs uppercase tracking-[0.15em] text-muted">
                     Pricing

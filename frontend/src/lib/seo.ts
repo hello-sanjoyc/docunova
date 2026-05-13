@@ -48,6 +48,30 @@ export const INDEXABLE_ROUTES = [
         changeFrequency: "monthly",
         priority: 0.8,
     },
+    {
+        path: "/privacy-policy",
+        title: "Privacy Policy",
+        description:
+            "Read the DocuNova AI Privacy Policy, including how we collect, process, store, and protect information across our document and AI services.",
+        changeFrequency: "yearly",
+        priority: 0.5,
+    },
+    {
+        path: "/terms-of-service",
+        title: "Terms of Service",
+        description:
+            "Read the DocuNova AI Terms of Service governing access to and use of our website, applications, APIs, AI-powered document tools, and related services.",
+        changeFrequency: "yearly",
+        priority: 0.5,
+    },
+    {
+        path: "/data-deletion",
+        title: "Data Deletion Request",
+        description:
+            "Learn how to request permanent deletion of your DocuNova account, uploaded documents, AI chats, processed data, and associated account information.",
+        changeFrequency: "yearly",
+        priority: 0.5,
+    },
 ] as const;
 
 type PublicPath = (typeof INDEXABLE_ROUTES)[number]["path"] | `/${string}`;
